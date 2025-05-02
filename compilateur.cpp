@@ -282,6 +282,8 @@ void Expression(void){
 
 }
 
+void Statement(void);
+
 // AssignementStatement := Identifier ":=" Expression
 string AssignementStatement(void){
 	string variable;
@@ -433,10 +435,12 @@ void Statement(void){
 	} else if (current == FOR)
 	{
 		ForStatement();
-	} else if (current == BEGIN)
+	}
+	else if (current == BEGIN0)
 	{
 		BeginStatement();
-	} else {
+	}
+	else {
 		Error("A weird input!");
 	}
 }

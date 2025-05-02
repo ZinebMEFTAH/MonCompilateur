@@ -56,7 +56,7 @@ unknown [^\"A-Za-z0-9 \n\r\t\(\)\<\>\=\!\%\&\|\}\-\;\.]+
 "if"	return IF;
 "while"	return WHILE;
 "for"	return FOR;
-"begin"	return BEGIN;
+"begin"	return BEGIN0;
 
 <<EOF>>		return FEOF;
 {ws}    {/* skip blanks and tabs */};
