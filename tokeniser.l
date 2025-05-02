@@ -18,6 +18,7 @@ using namespace std;
 %option noyywrap
 %option c++
 %option yylineno
+%option caseless    
 
 stringconst  \"[^\n"]+\"
 ws      [ \t\n\r]+
@@ -36,7 +37,6 @@ unknown [^\"A-Za-z0-9 \n\r\t\(\)\<\>\=\!\%\&\|\}\-\;\.]+
 {mulop}		return MULOP;
 {relop}		return RELOP;
 {number}	return NUMBER;
-{id}		return ID;
 {stringconst}	return STRINGCONST;
 "["		return RBRACKET;
 "]"		return LBRACKET;
@@ -57,6 +57,7 @@ unknown [^\"A-Za-z0-9 \n\r\t\(\)\<\>\=\!\%\&\|\}\-\;\.]+
 "while"	return WHILE;
 "for"	return FOR;
 "begin"	return BEGIN0;
+{id}		return ID;
 
 <<EOF>>		return FEOF;
 {ws}    {/* skip blanks and tabs */};
