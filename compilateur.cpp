@@ -25,6 +25,8 @@
 #include <FlexLexer.h>
 #include "tokeniser.h"
 #include <cstring>
+#include <map>
+
 
 using namespace std;
 
@@ -41,11 +43,12 @@ FlexLexer* lexer = new yyFlexLexer; // This is the flex tokeniser
 // and lexer->YYText() returns the lexicon entry as a string
 
 	
-set<string> DeclaredVariables;
+enum TYPE { TYPE_UNDEFINED, TYPE_UNSIGNED_INT, TYPE_BOOLEAN };
+map<string, TYPE> VariablesWithTypes;
 unsigned long TagNumber=0;
 
 bool IsDeclared(const char *id){
-	return DeclaredVariables.find(id)!=DeclaredVariables.end();
+	return VariablesWithTypes.count(id);
 }
 
 
@@ -55,10 +58,29 @@ void Error(string s){
 	exit(-1);
 }
 
+void TypeError(string message){
+	cerr << "Ligne n°"<<lexer->lineno()<<", lu : '"<<lexer->YYText()<<"'("<<current<<"), mais ";
+	cerr<< message << endl;
+	exit(-1);
+}
+
+string TypeToString(TYPE t) {
+	switch(t) {
+		case TYPE_UNSIGNED_INT: return "UNSIGNED_INT";
+		case TYPE_BOOLEAN: return "BOOLEAN";
+		case TYPE_UNDEFINED: return "UNDEFINED";
+		default: return "UNKNOWN";
+	}
+}
+
 // Program := [DeclarationPart] StatementPart
 // DeclarationPart := "[" Letter {"," Letter} "]"
 // StatementPart := Statement {";" Statement} "."
-// Statement := AssignementStatement
+// Statement := AssignementStatement | IfStatement | WhileStatement | ForStatement | BlockStatement
+// IfStatement := "IF" Expression "THEN" Statement [ "ELSE" Statement ]
+// WhileStatement := "WHILE" Expression "DO" Statement
+// ForStatement := "FOR" AssignementStatement "To" Expression "DO" Statement
+// BlockStatement := "BEGIN" Statement { ";" Statement } "END"
 // AssignementStatement := Letter "=" Expression
 
 // Expression := SimpleExpression [RelationalOperator SimpleExpression]
@@ -74,22 +96,35 @@ void Error(string s){
 // Letter := "a"|...|"z"
 	
 		
-void Identifier(void){
+TYPE Identifier(void){
 	cout << "\tpush "<<lexer->YYText()<<endl;
+	string name = lexer->YYText();
 	current=(TOKEN) lexer->yylex();
+	return VariablesWithTypes[name];
 }
 
-void Number(void){
-	cout <<"\tpush $"<<atoi(lexer->YYText())<<endl;
-	current=(TOKEN) lexer->yylex();
+TYPE Number(void) {
+	string txt = lexer->YYText();
+
+	// Check if the string really is an unsigned int
+	for (char c : txt) {
+		if (!isdigit(c)) {
+			TypeError("Constante numérique invalide : " + txt);
+		}
+	}
+
+	cout << "\tpush $" << atoi(txt.c_str()) << endl;
+
+	current = (TOKEN) lexer->yylex();
+
+	return TYPE_UNSIGNED_INT;
 }
+TYPE Expression(void);			// Called by Term() and calls Term()
 
-void Expression(void);			// Called by Term() and calls Term()
-
-void Factor(void){
+TYPE Factor(void){
 	if(current==RPARENT){
 		current=(TOKEN) lexer->yylex();
-		Expression();
+		return Expression();
 		if(current!=LPARENT)
 			Error("')' était attendu");		// ")" expected
 		else
@@ -97,12 +132,12 @@ void Factor(void){
 	}
 	else 
 		if (current==NUMBER)
-			Number();
-	     	else
-				if(current==ID)
-					Identifier();
-				else
-					Error("'(' ou chiffre ou lettre attendue");
+			return Number();
+		else
+			if(current==ID)
+				return Identifier();
+			else
+				Error("'(' ou chiffre ou lettre attendue");
 }
 
 // MultiplicativeOperator := "*" | "/" | "%" | "&&"
@@ -122,12 +157,15 @@ OPMUL MultiplicativeOperator(void){
 }
 
 // Term := Factor {MultiplicativeOperator Factor}
-void Term(void){
+TYPE Term(void){
 	OPMUL mulop;
-	Factor();
+	TYPE type1 = Factor();
 	while(current==MULOP){
 		mulop=MultiplicativeOperator();		// Save operator in local variable
-		Factor();
+		TYPE type2 = Factor();
+		if (type1 != type2)
+			TypeError("Types in Term not compatible: '" + TypeToString(type1) + "' vs '" + TypeToString(type2) + "'");		
+		
 		cout << "\tpop %rbx"<<endl;	// get first operand
 		cout << "\tpop %rax"<<endl;	// get second operand
 		switch(mulop){
@@ -153,6 +191,7 @@ void Term(void){
 				Error("opérateur multiplicatif attendu");
 		}
 	}
+	return type1;
 }
 
 // AdditiveOperator := "+" | "-" | "||"
@@ -170,12 +209,16 @@ OPADD AdditiveOperator(void){
 }
 
 // SimpleExpression := Term {AdditiveOperator Term}
-void SimpleExpression(void){
+TYPE SimpleExpression(void){
 	OPADD adop;
-	Term();
+	TYPE type1 = Term();
 	while(current==ADDOP){
 		adop=AdditiveOperator();		// Save operator in local variable
-		Term();
+		TYPE type2 = Term();			// Get next term
+
+		if (type1 != type2)
+			TypeError("Types in Term not compatible: '" + TypeToString(type1) + "' vs '" + TypeToString(type2) + "'");		
+
 		cout << "\tpop %rbx"<<endl;	// get first operand
 		cout << "\tpop %rax"<<endl;	// get second operand
 		switch(adop){
@@ -193,7 +236,7 @@ void SimpleExpression(void){
 		}
 		cout << "\tpush %rax"<<endl;			// store result
 	}
-
+	return type1;
 }
 
 // DeclarationPart := "[" Ident {"," Ident} "]"
@@ -207,14 +250,22 @@ void DeclarationPart(void){
 	if(current!=ID)
 		Error("Un identificater était attendu");
 	cout << lexer->YYText() << ":\t.quad 0"<<endl;
-	DeclaredVariables.insert(lexer->YYText());
+	string varName = lexer->YYText();
+	if (VariablesWithTypes.count(varName)) {
+		Error("Variable '" + varName + "' déjà déclarée");
+	}
+	VariablesWithTypes[varName] = TYPE_UNSIGNED_INT;
 	current=(TOKEN) lexer->yylex();
 	while(current==COMMA){
 		current=(TOKEN) lexer->yylex();
 		if(current!=ID)
-			Error("Un identificateur était attendu");
+			Error("Un identificater était attendu");
 		cout << lexer->YYText() << ":\t.quad 0"<<endl;
-		DeclaredVariables.insert(lexer->YYText());
+		string varName = lexer->YYText();
+		if (VariablesWithTypes.count(varName)) {
+			Error("Variable '" + varName + "' déjà déclarée");
+		}
+		VariablesWithTypes[varName] = TYPE_UNSIGNED_INT;
 		current=(TOKEN) lexer->yylex();
 	}
 	if(current!=LBRACKET)
@@ -243,12 +294,15 @@ OPREL RelationalOperator(void){
 }
 
 // Expression := SimpleExpression [RelationalOperator SimpleExpression]
-void Expression(void){
+TYPE Expression(void){
 	OPREL oprel;
-	SimpleExpression();
+	TYPE type1 = SimpleExpression();
 	if(current==RELOP){
 		oprel=RelationalOperator();
-		SimpleExpression();
+		TYPE type2 = SimpleExpression();
+		if (type1 != type2)
+			TypeError("Types in Term not compatible: '" + TypeToString(type1) + "' vs '" + TypeToString(type2) + "'");		
+
 		cout << "\tpop %rax"<<endl;
 		cout << "\tpop %rbx"<<endl;
 		cout << "\tcmpq %rax, %rbx"<<endl;
@@ -278,7 +332,12 @@ void Expression(void){
 		cout << "\tjmp Suite"<<TagNumber<<endl;
 		cout << "Vrai"<<TagNumber<<":\tpush $0xFFFFFFFFFFFFFFFF\t\t# True"<<endl;	
 		cout << "Suite"<<TagNumber<<":"<<endl;
+		return TYPE_BOOLEAN;
+	} else
+	{
+		return type1;
 	}
+	
 
 }
 
@@ -293,12 +352,18 @@ string AssignementStatement(void){
 		cerr << "Erreur : Variable '"<<lexer->YYText()<<"' non déclarée"<<endl;
 		exit(-1);
 	}
+
 	variable=lexer->YYText();
+	TYPE type1 = VariablesWithTypes[variable];
+
 	current=(TOKEN) lexer->yylex();
 	if(current!=ASSIGN)
 		Error("caractères ':=' attendus");
 	current=(TOKEN) lexer->yylex();
-	Expression();
+	TYPE type2 = Expression();
+	if (type1 != type2)
+		TypeError("Types in Term not compatible: '" + TypeToString(type1) + "' vs '" + TypeToString(type2) + "'");		
+
 	cout << "\tpop "<<variable<<endl;
 	return variable;
 }
@@ -308,8 +373,10 @@ void IfStatement(void){
 	int ifTag = ++TagNumber; // reserve a unique tag once
 
 	current = (TOKEN) lexer->yylex(); // read after 'IF'
-	Expression();
-
+	TYPE TypeCondition = Expression();
+	if (TypeCondition != TYPE_BOOLEAN)
+		TypeError("Condition in IF statement must be of type BOOLEAN");
+	
 	cout << "\tpop %rax" << endl;
 	cout << "\tcmp $0, %rax" << endl;
 
@@ -338,7 +405,10 @@ void WhileStatement(void) {
 	cout << "While" << whileTag << ":" << endl;
 
 	current = (TOKEN) lexer->yylex(); // read after 'WHILE'
-	Expression();
+	TYPE TypeCondition = Expression();
+	if (TypeCondition != TYPE_BOOLEAN)
+		TypeError("Condition in WHILE statement must be of type BOOLEAN");
+
 
 	cout << "\tpop %rax" << endl;
 	cout << "\tcmp $0, %rax" << endl;
