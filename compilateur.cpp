@@ -59,8 +59,8 @@ void Error(string s){
 }
 
 void TypeError(string message){
-	cerr << "Ligne n°"<<lexer->lineno()<<", lu : '"<<lexer->YYText()<<"'("<<current<<"), mais ";
-	cerr<< message << endl;
+	cerr << "Ligne n°" << lexer->lineno() << ", erreur de type sur '" 
+	<< lexer->YYText() << "' (" << current << ") : " << message << endl;
 	exit(-1);
 }
 
@@ -109,7 +109,7 @@ TYPE Number(void) {
 	// Check if the string really is an unsigned int
 	for (char c : txt) {
 		if (!isdigit(c)) {
-			TypeError("Constante numérique invalide : " + txt);
+			TypeError("Erreur de syntaxe : '" + txt + "' n'est pas une constante entière positive valide.");
 		}
 	}
 
@@ -119,6 +119,7 @@ TYPE Number(void) {
 
 	return TYPE_UNSIGNED_INT;
 }
+
 TYPE Expression(void);			// Called by Term() and calls Term()
 
 TYPE Factor(void) {
@@ -169,9 +170,19 @@ TYPE Term(void){
 	while(current==MULOP){
 		mulop=MultiplicativeOperator();		// Save operator in local variable
 		TYPE type2 = Factor();
-		if (type1 != type2)
-			TypeError("Types in Term not compatible: '" + TypeToString(type1) + "' vs '" + TypeToString(type2) + "'");		
-		
+		if (type1 != type2) {
+			string op;
+			switch(mulop) {
+				case MUL: op = "*"; break;
+				case DIV: op = "/"; break;
+				case MOD: op = "%"; break;
+				case AND: op = "&&"; break;
+				default:  op = "??"; break;
+			}
+			TypeError("Types incompatibles dans l'expression : impossible d'appliquer l'opérateur '" + op +
+					  "' entre " + TypeToString(type1) + " et " + TypeToString(type2));
+		}
+
 		cout << "\tpop %rbx"<<endl;	// get first operand
 		cout << "\tpop %rax"<<endl;	// get second operand
 		switch(mulop){
@@ -222,8 +233,17 @@ TYPE SimpleExpression(void){
 		adop=AdditiveOperator();		// Save operator in local variable
 		TYPE type2 = Term();			// Get next term
 
-		if (type1 != type2)
-			TypeError("Types in Term not compatible: '" + TypeToString(type1) + "' vs '" + TypeToString(type2) + "'");		
+		if (type1 != type2) {
+			string op;
+			switch(adop) {
+				case ADD: op = "+"; break;
+				case SUB: op = "-"; break;
+				case OR:  op = "||"; break;
+				default:  op = "??"; break;
+			}
+			TypeError("Types incompatibles dans l'expression : impossible d'appliquer l'opérateur '" + op +
+					  "' entre " + TypeToString(type1) + " et " + TypeToString(type2));
+		}
 
 		cout << "\tpop %rbx"<<endl;	// get first operand
 		cout << "\tpop %rax"<<endl;	// get second operand
@@ -320,7 +340,9 @@ TYPE Expression(void){
 		oprel=RelationalOperator();
 		TYPE type2 = SimpleExpression();
 		if (type1 != type2)
-			TypeError("Types in Term not compatible: '" + TypeToString(type1) + "' vs '" + TypeToString(type2) + "'");		
+			TypeError("Comparaison invalide : l'expression de gauche est de type " + 
+					TypeToString(type1) + ", mais celle de droite est de type " + 
+					TypeToString(type2));
 
 		cout << "\tpop %rax"<<endl;
 		cout << "\tpop %rbx"<<endl;
@@ -378,9 +400,11 @@ string AssignementStatement(void){
 		Error("caractères ':=' attendus");
 	current=(TOKEN) lexer->yylex();
 	TYPE type2 = Expression();
-	if (type1 != type2)
-		TypeError("Types in Term not compatible: '" + TypeToString(type1) + "' vs '" + TypeToString(type2) + "'");		
-
+	if (type1 != type2) {
+		TypeError("Affectation invalide : la variable '" + variable + 
+				  "' est de type " + TypeToString(type1) + 
+				  ", mais l'expression est de type " + TypeToString(type2));
+	}
 	cout << "\tpop "<<variable<<endl;
 	return variable;
 }
@@ -392,8 +416,10 @@ void IfStatement(void){
 	current = (TOKEN) lexer->yylex(); // read after 'IF'
 	TYPE TypeCondition = Expression();
 	if (TypeCondition != TYPE_BOOLEAN)
-		TypeError("Condition in IF statement must be of type BOOLEAN");
-	
+		TypeError("Condition in IF statement must be of type BOOLEAN, but got '" 
+				+ string(lexer->YYText()) + "' of type " 
+				+ TypeToString(TypeCondition));	
+
 	cout << "\tpop %rax" << endl;
 	cout << "\tcmp $0, %rax" << endl;
 
@@ -424,7 +450,8 @@ void WhileStatement(void) {
 	current = (TOKEN) lexer->yylex(); // read after 'WHILE'
 	TYPE TypeCondition = Expression();
 	if (TypeCondition != TYPE_BOOLEAN)
-		TypeError("Condition in WHILE statement must be of type BOOLEAN");
+		TypeError("Condition invalide dans la boucle WHILE : expression de type " 
+			+ TypeToString(TypeCondition) + " au lieu de BOOLEAN.");
 
 
 	cout << "\tpop %rax" << endl;

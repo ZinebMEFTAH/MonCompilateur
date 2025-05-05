@@ -4,12 +4,12 @@ begin
   x := 1;
   y := 2;
 
-  if x then
+  if x == 1 then
     y := 3
   else
     y := 4;
 
-  while x do
+  while x == 1 do
     begin
       y := y + 1;
       x := x - 1
