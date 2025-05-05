@@ -121,23 +121,29 @@ TYPE Number(void) {
 }
 TYPE Expression(void);			// Called by Term() and calls Term()
 
-TYPE Factor(void){
-	if(current==RPARENT){
-		current=(TOKEN) lexer->yylex();
-		return Expression();
-		if(current!=LPARENT)
-			Error("')' était attendu");		// ")" expected
+TYPE Factor(void) {
+	if (current == RPARENT) {
+		current = (TOKEN) lexer->yylex();  // skip '('
+
+		TYPE exprType = Expression();      // parse inner expression
+
+		if (current != LPARENT)
+			Error("')' était attendu");
 		else
-			current=(TOKEN) lexer->yylex();
+			current = (TOKEN) lexer->yylex();  // skip ')'
+
+		return exprType;
 	}
-	else 
-		if (current==NUMBER)
-			return Number();
-		else
-			if(current==ID)
-				return Identifier();
-			else
-				Error("'(' ou chiffre ou lettre attendue");
+	else if (current == NUMBER) {
+		return Number();
+	}
+	else if (current == ID) {
+		return Identifier();
+	}
+	else {
+		Error("'(' ou chiffre ou lettre attendue");
+		return TYPE_UNDEFINED;  // Optional fallback
+	}
 }
 
 // MultiplicativeOperator := "*" | "/" | "%" | "&&"
