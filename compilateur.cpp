@@ -296,6 +296,19 @@ OPREL RelationalOperator(void){
 // Expression := SimpleExpression [RelationalOperator SimpleExpression]
 TYPE Expression(void){
 	OPREL oprel;
+	if (current == TRUE0)
+	{
+		cout << "\tpush $0xFFFFFFFFFFFFFFFF\t\t# True"<<endl;	
+		current = (TOKEN) lexer->yylex();  // Advance to next token
+		return TYPE_BOOLEAN;
+	} else if (current == FALSE0)
+	{
+		cout << "\tpush $0\t\t# False"<<endl;
+		current = (TOKEN) lexer->yylex();  // Advance to next token
+		return TYPE_BOOLEAN;
+	}
+	
+	int tag = ++TagNumber;
 	TYPE type1 = SimpleExpression();
 	if(current==RELOP){
 		oprel=RelationalOperator();
@@ -308,37 +321,35 @@ TYPE Expression(void){
 		cout << "\tcmpq %rax, %rbx"<<endl;
 		switch(oprel){
 			case EQU:
-				cout << "\tje Vrai"<<++TagNumber<<"\t# If equal"<<endl;
+				cout << "\tje Vrai"<<tag<<"\t# If equal"<<endl;
 				break;
 			case DIFF:
-				cout << "\tjne Vrai"<<++TagNumber<<"\t# If different"<<endl;
+				cout << "\tjne Vrai"<<tag<<"\t# If different"<<endl;
 				break;
 			case SUPE:
-				cout << "\tjae Vrai"<<++TagNumber<<"\t# If above or equal"<<endl;
+				cout << "\tjae Vrai"<<tag<<"\t# If above or equal"<<endl;
 				break;
 			case INFE:
-				cout << "\tjbe Vrai"<<++TagNumber<<"\t# If below or equal"<<endl;
+				cout << "\tjbe Vrai"<<tag<<"\t# If below or equal"<<endl;
 				break;
 			case INF:
-				cout << "\tjb Vrai"<<++TagNumber<<"\t# If below"<<endl;
+				cout << "\tjb Vrai"<<tag<<"\t# If below"<<endl;
 				break;
 			case SUP:
-				cout << "\tja Vrai"<<++TagNumber<<"\t# If above"<<endl;
+				cout << "\tja Vrai"<<tag<<"\t# If above"<<endl;
 				break;
 			default:
 				Error("Opérateur de comparaison inconnu");
 		}
 		cout << "\tpush $0\t\t# False"<<endl;
-		cout << "\tjmp Suite"<<TagNumber<<endl;
-		cout << "Vrai"<<TagNumber<<":\tpush $0xFFFFFFFFFFFFFFFF\t\t# True"<<endl;	
-		cout << "Suite"<<TagNumber<<":"<<endl;
+		cout << "\tjmp Suite"<<tag<<endl;
+		cout << "Vrai"<<tag<<":\tpush $0xFFFFFFFFFFFFFFFF\t\t# True"<<endl;	
+		cout << "Suite"<<tag<<":"<<endl;
 		return TYPE_BOOLEAN;
 	} else
 	{
 		return type1;
 	}
-	
-
 }
 
 void Statement(void);
