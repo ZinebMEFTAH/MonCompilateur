@@ -57,6 +57,8 @@ unknown [^\"A-Za-z0-9 \n\r\t\(\)\<\>\=\!\%\&\|\}\-\;\.]+
 "while"	return WHILE;
 "for"	return FOR;
 "begin"	return BEGIN0;
+"true"  return TRUE0;
+"false" return FALSE0;
 {id}		return ID;
 
 <<EOF>>		return FEOF;
