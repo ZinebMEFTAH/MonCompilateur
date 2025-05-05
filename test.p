@@ -1,4 +1,6 @@
-[x, y, i]
+VAR 
+    a,b,c   : BOOLEAN ;
+    d,e,f,g : INTEGER.
 
 begin
   x := 1;

@@ -30,9 +30,9 @@
 
 using namespace std;
 
-enum OPREL {EQU, DIFF, INF, SUP, INFE, SUPE, WTFR};
-enum OPADD {ADD, SUB, OR, WTFA};
-enum OPMUL {MUL, DIV, MOD, AND ,WTFM};
+enum OPREL {EQU, DIFF, INF, SUP, INFE, SUPE};
+enum OPADD {ADD, SUB, OR};
+enum OPMUL {MUL, DIV, MOD, AND};
 
 TOKEN current;				// Current token
 
@@ -43,7 +43,7 @@ FlexLexer* lexer = new yyFlexLexer; // This is the flex tokeniser
 // and lexer->YYText() returns the lexicon entry as a string
 
 	
-enum TYPE { TYPE_UNDEFINED, TYPE_UNSIGNED_INT, TYPE_BOOLEAN };
+enum TYPE { TYPE_UNDEFINED, TYPE_UNSIGNED_INT, TYPE_BOOLEAN, TYPE_CHAR, TYPE_DOUBLE };
 map<string, TYPE> VariablesWithTypes;
 unsigned long TagNumber=0;
 
@@ -68,13 +68,18 @@ string TypeToString(TYPE t) {
 	switch(t) {
 		case TYPE_UNSIGNED_INT: return "UNSIGNED_INT";
 		case TYPE_BOOLEAN: return "BOOLEAN";
+		case TYPE_CHAR: return "CHAR";
+		case TYPE_DOUBLE: return "DOUBLE";
 		case TYPE_UNDEFINED: return "UNDEFINED";
 		default: return "UNKNOWN";
 	}
 }
 
 // Program := [DeclarationPart] StatementPart
-// DeclarationPart := "[" Letter {"," Letter} "]"
+// VarDeclarationPart := "VAR" VarDeclaration {";" VarDeclaration} "."
+// VarDeclaration := Ident {"," Ident} ":" Type
+
+
 // StatementPart := Statement {";" Statement} "."
 // Statement := AssignementStatement | IfStatement | WhileStatement | ForStatement | BlockStatement
 // IfStatement := "IF" Expression "THEN" Statement [ "ELSE" Statement ]
@@ -82,6 +87,7 @@ string TypeToString(TYPE t) {
 // ForStatement := "FOR" AssignementStatement "To" Expression "DO" Statement
 // BlockStatement := "BEGIN" Statement { ";" Statement } "END"
 // AssignementStatement := Letter "=" Expression
+// DisplayStatement := "DISPLAY" Expression
 
 // Expression := SimpleExpression [RelationalOperator SimpleExpression]
 // SimpleExpression := Term {AdditiveOperator Term}
@@ -123,12 +129,12 @@ TYPE Number(void) {
 TYPE Expression(void);			// Called by Term() and calls Term()
 
 TYPE Factor(void) {
-	if (current == RPARENT) {
+	if (current == LPARENT) {
 		current = (TOKEN) lexer->yylex();  // skip '('
 
 		TYPE exprType = Expression();      // parse inner expression
 
-		if (current != LPARENT)
+		if (current != RPARENT)
 			Error("')' était attendu");
 		else
 			current = (TOKEN) lexer->yylex();  // skip ')'
@@ -150,15 +156,16 @@ TYPE Factor(void) {
 // MultiplicativeOperator := "*" | "/" | "%" | "&&"
 OPMUL MultiplicativeOperator(void){
 	OPMUL opmul;
-	if(strcmp(lexer->YYText(),"*")==0)
+	std::string op = lexer->YYText();
+	if(op == "*")
 		opmul=MUL;
-	else if(strcmp(lexer->YYText(),"/")==0)
+	else if(op == "/")
 		opmul=DIV;
-	else if(strcmp(lexer->YYText(),"%")==0)
+	else if(op == "%")
 		opmul=MOD;
-	else if(strcmp(lexer->YYText(),"&&")==0)
+	else if(op == "&&")
 		opmul=AND;
-	else opmul=WTFM;
+	else Error("Opérateur multiplicatif invalide. Attendus: * | / | % | && ");;
 	current=(TOKEN) lexer->yylex();
 	return opmul;
 }
@@ -214,13 +221,14 @@ TYPE Term(void){
 // AdditiveOperator := "+" | "-" | "||"
 OPADD AdditiveOperator(void){
 	OPADD opadd;
-	if(strcmp(lexer->YYText(),"+")==0)
+	std::string op = lexer->YYText();
+	if(op == "+")
 		opadd=ADD;
-	else if(strcmp(lexer->YYText(),"-")==0)
+	else if(op == "-")
 		opadd=SUB;
-	else if(strcmp(lexer->YYText(),"||")==0)
+	else if(op == "||")
 		opadd=OR;
-	else opadd=WTFA;
+	else Error("Opérateur additif invalide. Attendus: + , -, ||");
 	current=(TOKEN) lexer->yylex();
 	return opadd;
 }
@@ -265,56 +273,121 @@ TYPE SimpleExpression(void){
 	return type1;
 }
 
-// DeclarationPart := "[" Ident {"," Ident} "]"
-void DeclarationPart(void){
-	if(current!=RBRACKET)
-		Error("caractère '[' attendu");
-	cout << "\t.data"<<endl;
-	cout << "\t.align 8"<<endl;
-	
+TYPE Type(void){
+	TYPE type;
+	if (current == BOOLEAN)	
+	{
+		type = TYPE_BOOLEAN;
+	} else if (current == INTEGER)
+	{
+		type = TYPE_UNSIGNED_INT;
+	} else if (current == DOUBLE)
+	{
+		type = TYPE_DOUBLE;
+	} else if (current == CHAR)
+	{
+		type = TYPE_CHAR;
+	} else {
+		type = TYPE_UNDEFINED;
+	}
+		
 	current=(TOKEN) lexer->yylex();
+	return type;
+}
+
+// VarDeclarationPart := "VAR" VarDeclaration {";" VarDeclaration} "."
+void VarDeclarationPart(void){
+	if(current!=VAR) 	Error("caractère 'VAR' attendu");
+	cout << "\t.data"<<endl;
+	cout << "\tFormatString1:    .string '%llu\\n\n'"<<endl;
+	cout << "\t.align 8"<<endl;
+	VarDeclaration();
+	while(current==SEMICOLON){
+		current=(TOKEN) lexer->yylex();
+		VarDeclaration();
+	}
+	if(current!=DOT)
+		Error("caractère '.' attendu");
+	current=(TOKEN) lexer->yylex();
+}
+
+// VarDeclaration := Ident {"," Ident} ":" Type
+void VarDeclaration(void){
+
 	if(current!=ID)
 		Error("Un identificater était attendu");
-	cout << lexer->YYText() << ":\t.quad 0"<<endl;
-	string varName = lexer->YYText();
-	if (VariablesWithTypes.count(varName)) {
-		Error("Variable '" + varName + "' déjà déclarée");
-	}
-	VariablesWithTypes[varName] = TYPE_UNSIGNED_INT;
+
+	string varName;
+	std::set<std::string> variablesSet;
+
+	varName = lexer->YYText();
+	variablesSet.insert(varName);
+
 	current=(TOKEN) lexer->yylex();
 	while(current==COMMA){
 		current=(TOKEN) lexer->yylex();
 		if(current!=ID)
 			Error("Un identificater était attendu");
-		cout << lexer->YYText() << ":\t.quad 0"<<endl;
-		string varName = lexer->YYText();
-		if (VariablesWithTypes.count(varName)) {
-			Error("Variable '" + varName + "' déjà déclarée");
+		//cout << lexer->YYText() << ":\t.quad 0"<<endl;
+		varName = lexer->YYText();
+		if (variablesSet.find(varName) != variablesSet.end()) {
+			// It's already in the set
+			std::cerr << "Variable '" << varName << "' is already declared in this block.\n";
+		} else {
+			variablesSet.insert(varName);
 		}
-		VariablesWithTypes[varName] = TYPE_UNSIGNED_INT;
 		current=(TOKEN) lexer->yylex();
 	}
-	if(current!=LBRACKET)
-		Error("caractère ']' attendu");
+
+	if(current!=COLON)
+		Error("caractère ':' attendu");
 	current=(TOKEN) lexer->yylex();
+
+	TYPE type = Type();
+
+	if (type == TYPE_UNDEFINED) {
+		Error("Type non reconnu ou mal écrit");
+	}
+
+	for (const std::string& var : variablesSet) {
+		if (VariablesWithTypes.count(var)) {
+			Error("Variable '" + var + "' déjà déclarée");
+		}
+		VariablesWithTypes[var] = type;
+		//cout << lexer->YYText() << ":\t.word 0     # 32-bit unsigned integer"<<endl;
+		if (type == TYPE_UNSIGNED_INT)	
+		{
+			cout << var << ":\t.quad 0     # 32-bit unsigned integer"<<endl;
+		} else if (type == TYPE_BOOLEAN)
+		{
+			cout << var << ":\t.byte 0        # 1 byte boolean"<<endl;
+		} else if (type == TYPE_CHAR)
+		{
+			cout << var << ":\t.byte 0      # character"<<endl;
+		} else if (type == TYPE_DOUBLE)
+		{
+			cout << var << ":\t.double 0.0  # 64-bit double"<<endl;
+		}
+	}
 }
 
 // RelationalOperator := "==" | "!=" | "<" | ">" | "<=" | ">="  
 OPREL RelationalOperator(void){
 	OPREL oprel;
-	if(strcmp(lexer->YYText(),"==")==0)
+	std::string op = lexer->YYText();
+	if(op == "==")
 		oprel=EQU;
-	else if(strcmp(lexer->YYText(),"!=")==0)
+	else if(op == "!=")
 		oprel=DIFF;
-	else if(strcmp(lexer->YYText(),"<")==0)
+	else if(op == "<")
 		oprel=INF;
-	else if(strcmp(lexer->YYText(),">")==0)
+	else if(op == ">")
 		oprel=SUP;
-	else if(strcmp(lexer->YYText(),"<=")==0)
+	else if(op == "<=")
 		oprel=INFE;
-	else if(strcmp(lexer->YYText(),">=")==0)
+	else if(op == ">=")
 		oprel=SUPE;
-	else oprel=WTFR;
+	else Error("Opérateur de comparaison invalide. Attendus: == != < > <= >=");
 	current=(TOKEN) lexer->yylex();
 	return oprel;
 }
@@ -398,6 +471,7 @@ string AssignementStatement(void){
 	current=(TOKEN) lexer->yylex();
 	if(current!=ASSIGN)
 		Error("caractères ':=' attendus");
+
 	current=(TOKEN) lexer->yylex();
 	TYPE type2 = Expression();
 	if (type1 != type2) {
@@ -479,13 +553,20 @@ void ForStatement(void){
 
 	current = (TOKEN) lexer->yylex(); // read after 'FOR'
 	string CurrentAssignedVar = AssignementStatement();
-
+	TYPE loopVarType = VariablesWithTypes[CurrentAssignedVar];
+	if (loopVarType != TYPE_UNSIGNED_INT) {
+		TypeError("FOR loop variable must be INTEGER");
+	}
 	cout << "\tmov " << CurrentAssignedVar << ", %rax" << endl;
 
 	if (current != TO) Error("Expected 'TO'");
 	current = (TOKEN) lexer->yylex();
 
-	Expression();  // limit value
+	TYPE toType = Expression();  // limit value
+	if (toType != TYPE_UNSIGNED_INT) {
+		TypeError("FOR loop to value must be INTEGER");
+	}
+
 	cout << "\tpop %rdx" << endl;
 
 	if (current != DO) Error("Expected 'DO'");
@@ -535,6 +616,22 @@ void BeginStatement(void){
 	current = (TOKEN) lexer->yylex();
 }
 
+void DisplayStatement(void){
+	current = (TOKEN) lexer->yylex(); 
+	TYPE ExprType = Expression();
+	if (ExprType != TYPE_UNSIGNED_INT) {
+		Error("DISPLAY only supports INTEGER expressions.");
+	}
+	cout << "\tpop %rdx                     # The value to be displayed" << endl;
+	cout << "\tmovq $FormatString1, %rsi    # '%llu\n'" << endl;
+	cout << "\tmovl    $1, %edi" << endl;
+	cout << "\tmovl    $0, %eax" << endl;
+	cout << "\tcall    __printf_chk@PLT" << endl;
+
+
+	current = (TOKEN) lexer->yylex(); 
+}
+
 // Statement := AssignementStatement | IfStatement | WhileStatement | ForStatement | BlockStatement
 void Statement(void){
 	if (current == ID)
@@ -553,8 +650,10 @@ void Statement(void){
 	else if (current == BEGIN0)
 	{
 		BeginStatement();
-	}
-	else {
+	} else if (current == DISPLAY)
+	{
+		DisplayStatement();
+	} else {
 		Error("A weird input!");
 	}
 }
@@ -577,8 +676,8 @@ void StatementPart(void){
 
 // Program := [DeclarationPart] StatementPart
 void Program(void){
-	if(current==RBRACKET)
-		DeclarationPart();
+	if(current==VAR)
+		VarDeclarationPart();
 	StatementPart();	
 }
 

@@ -43,7 +43,8 @@ unknown [^\"A-Za-z0-9 \n\r\t\(\)\<\>\=\!\%\&\|\}\-\;\.]+
 ","		return COMMA;
 ";"		return SEMICOLON;
 "."		return DOT;
-":="		return ASSIGN;
+":="	return ASSIGN;
+":"		return COLON;
 "("		return RPARENT;
 ")"		return LPARENT;
 "!"		return NOT;
@@ -59,6 +60,12 @@ unknown [^\"A-Za-z0-9 \n\r\t\(\)\<\>\=\!\%\&\|\}\-\;\.]+
 "begin"	return BEGIN0;
 "true"  return TRUE0;
 "false" return FALSE0;
+"DIPLAY" return DIPLAY;
+"VAR"    return VAR;
+"BOOLEAN" return BOOLEAN;
+"INTEGER" return INTEGER;
+"DOUBLE"  return DOUBLE;
+"CHAR" return CHAR;
 {id}		return ID;
 
 <<EOF>>		return FEOF;
