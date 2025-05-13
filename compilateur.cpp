@@ -75,6 +75,34 @@ string TypeToString(TYPE t) {
 	}
 }
 
+TYPE CheckBinaryOperationTypes(TYPE t1, TYPE t2, string op) {
+	if (t1 == TYPE_UNDEFINED || t2 == TYPE_UNDEFINED || t1 == TYPE_CHAR || t2 == TYPE_CHAR)
+		TypeError("Opération non supportée pour CHAR ou UNDEFINED");
+
+	if ((t1 == TYPE_BOOLEAN || t2 == TYPE_BOOLEAN) && t1 != t2)
+		TypeError("Les booléens ne peuvent être combinés qu'entre eux");
+
+	if ((op == "&&" || op == "||") && (t1 != TYPE_BOOLEAN || t2 != TYPE_BOOLEAN))
+		TypeError("'" + op + "' ne peut s'appliquer qu'à des booléens");
+
+	if ((op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=") &&
+	    (t1 == TYPE_BOOLEAN && t2 == TYPE_BOOLEAN))
+		return TYPE_BOOLEAN; // only ==, != should reach here
+
+	if ((op == "%" && (t1 != TYPE_UNSIGNED_INT || t2 != TYPE_UNSIGNED_INT)))
+		TypeError("L'opérateur '%' ne s'applique qu'à deux entiers");
+
+	if (t1 == t2)
+		return t1;
+
+	if ((t1 == TYPE_UNSIGNED_INT && t2 == TYPE_DOUBLE) || (t1 == TYPE_DOUBLE && t2 == TYPE_UNSIGNED_INT))
+		return TYPE_DOUBLE;
+
+	TypeError("Types incompatibles pour '" + op + "' entre " + TypeToString(t1) + " et " + TypeToString(t2));
+	return TYPE_UNDEFINED; // not reached
+}
+
+
 // Program := [DeclarationPart] StatementPart
 // VarDeclarationPart := "VAR" VarDeclaration {";" VarDeclaration} "."
 // VarDeclaration := Ident {"," Ident} ":" Type
@@ -101,29 +129,27 @@ string TypeToString(TYPE t) {
 // Digit := "0"|"1"|"2"|"3"|"4"|"5"|"6"|"7"|"8"|"9"
 // Letter := "a"|...|"z"
 	
-		
 TYPE Identifier(void){
-	cout << "\tpush "<<lexer->YYText()<<endl;
 	string name = lexer->YYText();
-	current=(TOKEN) lexer->yylex();
+	cout << "\tpush " << name << endl;
+	current = (TOKEN) lexer->yylex();
 	return VariablesWithTypes[name];
 }
 
 TYPE Number(void) {
 	string txt = lexer->YYText();
-
-	// Check if the string really is an unsigned int
-	for (char c : txt) {
-		if (!isdigit(c)) {
-			TypeError("Erreur de syntaxe : '" + txt + "' n'est pas une constante entière positive valide.");
-		}
-	}
-
-	cout << "\tpush $" << atoi(txt.c_str()) << endl;
-
+	cout << "\tpush $" << txt << "\t# push constant" << endl;
 	current = (TOKEN) lexer->yylex();
+	return VariablesWithTypes[txt];
+}
 
-	return TYPE_UNSIGNED_INT;
+TYPE CharConst(void) {
+	char c = lexer->YYText()[1];  // lexer->YYText() is like: `'a'`
+	cout << "\tmovq $0, %rax" << endl;
+	cout << "\tmovb $" << (int)c << ", %al" << endl;
+	cout << "\tpush %rax\t# push char '" << c << "'" << endl;
+	current = (TOKEN) lexer->yylex();
+	return TYPE_CHAR;
 }
 
 TYPE Expression(void);			// Called by Term() and calls Term()
@@ -143,6 +169,9 @@ TYPE Factor(void) {
 	}
 	else if (current == NUMBER) {
 		return Number();
+	}
+	else if (current == CHARCONST) {
+		return CharConst();
 	}
 	else if (current == ID) {
 		return Identifier();
@@ -174,47 +203,75 @@ OPMUL MultiplicativeOperator(void){
 TYPE Term(void){
 	OPMUL mulop;
 	TYPE type1 = Factor();
-	while(current==MULOP){
-		mulop=MultiplicativeOperator();		// Save operator in local variable
+
+	while(current == MULOP){
+		mulop = MultiplicativeOperator();
 		TYPE type2 = Factor();
-		if (type1 != type2) {
-			string op;
-			switch(mulop) {
-				case MUL: op = "*"; break;
-				case DIV: op = "/"; break;
-				case MOD: op = "%"; break;
-				case AND: op = "&&"; break;
-				default:  op = "??"; break;
-			}
-			TypeError("Types incompatibles dans l'expression : impossible d'appliquer l'opérateur '" + op +
-					  "' entre " + TypeToString(type1) + " et " + TypeToString(type2));
+
+		string op;
+		switch(mulop) {
+			case MUL: op = "*"; break;
+			case DIV: op = "/"; break;
+			case MOD: op = "%"; break;
+			case AND: op = "&&"; break;
+			default:  op = "??"; break;
 		}
 
-		cout << "\tpop %rbx"<<endl;	// get first operand
-		cout << "\tpop %rax"<<endl;	// get second operand
-		switch(mulop){
-			case AND:
-				cout << "\tmulq	%rbx"<<endl;	// a * b -> %rdx:%rax
-				cout << "\tpush %rax\t# AND"<<endl;	// store result
-				break;
-			case MUL:
-				cout << "\tmulq	%rbx"<<endl;	// a * b -> %rdx:%rax
-				cout << "\tpush %rax\t# MUL"<<endl;	// store result
-				break;
-			case DIV:
-				cout << "\tmovq $0, %rdx"<<endl; 	// Higher part of numerator  
-				cout << "\tdiv %rbx"<<endl;			// quotient goes to %rax
-				cout << "\tpush %rax\t# DIV"<<endl;		// store result
-				break;
-			case MOD:
-				cout << "\tmovq $0, %rdx"<<endl; 	// Higher part of numerator  
-				cout << "\tdiv %rbx"<<endl;			// remainder goes to %rdx
-				cout << "\tpush %rdx\t# MOD"<<endl;		// store result
-				break;
-			default:
-				Error("opérateur multiplicatif attendu");
+		TYPE commonType = CheckBinaryOperationTypes(type1, type2, op);
+
+		if (commonType == TYPE_DOUBLE)
+		{
+			cout << "\tfldl (%rsp)           # Load top of general stack (b) into %st(0)" << endl;
+			cout << "\taddq $8, %rsp         # Pop b" << endl;
+			cout << "\tfldl (%rsp)           # Load next (a) into %st(0), b is now in %st(1)" << endl;
+			cout << "\taddq $8, %rsp         # Pop a" << endl;
+
+			switch(mulop){
+				case MUL:
+					cout << "\tfmulp %st, %st(1)       # DOUBLE MUL" << endl;
+					break;
+				case DIV:
+					cout << "\tfdivp %st, %st(1)       # DOUBLE DIV" << endl;
+					break;
+				default:
+					Error("opérateur multiplicatif attendu");
+			}
+
+			cout << "\tsubq $8, %rsp         # Make space on general stack" << endl;
+			cout << "\tfstpl (%rsp)          # Store result back to general stack" << endl;
+
+			type1 = commonType;
+		} else {
+			cout << "\tpop %rbx" << endl;
+			cout << "\tpop %rax" << endl;
+
+			switch(mulop){
+				case AND:
+					cout << "\tmulq %rbx" << endl;
+					cout << "\tpush %rax\t# AND" << endl;
+					break;
+				case MUL:
+					cout << "\tmulq %rbx" << endl;
+					cout << "\tpush %rax\t# MUL" << endl;
+					break;
+				case DIV:
+					cout << "\tmovq $0, %rdx" << endl;
+					cout << "\tdiv %rbx" << endl;
+					cout << "\tpush %rax\t# DIV" << endl;
+					break;
+				case MOD:
+					cout << "\tmovq $0, %rdx" << endl;
+					cout << "\tdiv %rbx" << endl;
+					cout << "\tpush %rdx\t# MOD" << endl;
+					break;
+				default:
+					Error("opérateur multiplicatif attendu");
+			}
+
+			type1 = commonType;
 		}
 	}
+
 	return type1;
 }
 
@@ -234,42 +291,70 @@ OPADD AdditiveOperator(void){
 }
 
 // SimpleExpression := Term {AdditiveOperator Term}
+// SimpleExpression := Term {AdditiveOperator Term}
 TYPE SimpleExpression(void){
 	OPADD adop;
 	TYPE type1 = Term();
+
 	while(current==ADDOP){
-		adop=AdditiveOperator();		// Save operator in local variable
+		adop = AdditiveOperator();		// Save operator in local variable
 		TYPE type2 = Term();			// Get next term
 
-		if (type1 != type2) {
-			string op;
-			switch(adop) {
-				case ADD: op = "+"; break;
-				case SUB: op = "-"; break;
-				case OR:  op = "||"; break;
-				default:  op = "??"; break;
-			}
-			TypeError("Types incompatibles dans l'expression : impossible d'appliquer l'opérateur '" + op +
-					  "' entre " + TypeToString(type1) + " et " + TypeToString(type2));
+		string op;
+		switch(adop) {
+			case ADD: op = "+"; break;
+			case SUB: op = "-"; break;
+			case OR:  op = "||"; break;
+			default:  op = "??"; break;
 		}
 
-		cout << "\tpop %rbx"<<endl;	// get first operand
-		cout << "\tpop %rax"<<endl;	// get second operand
-		switch(adop){
-			case OR:
-				cout << "\taddq	%rbx, %rax\t# OR"<<endl;// operand1 OR operand2
-				break;			
-			case ADD:
-				cout << "\taddq	%rbx, %rax\t# ADD"<<endl;	// add both operands
-				break;			
-			case SUB:	
-				cout << "\tsubq	%rbx, %rax\t# SUB"<<endl;	// substract both operands
-				break;
-			default:
-				Error("opérateur additif inconnu");
+		TYPE commonType = CheckBinaryOperationTypes(type1, type2, op);
+
+		if (commonType == TYPE_DOUBLE)
+		{
+			cout << "\tfldl (%rsp)           # Load top of general stack (b) into %st(0)" << endl;
+			cout << "\taddq $8, %rsp         # Pop b" << endl;
+			cout << "\tfldl (%rsp)           # Load next (a) into %st(0), b is now in %st(1)" << endl;
+			cout << "\taddq $8, %rsp         # Pop a" << endl;
+
+			switch(adop){
+				case ADD:
+					cout << "\tfaddp %st, %st(1)       # DOUBLE ADD" << endl;
+					break;
+				case SUB:
+					cout << "\tfsubp %st, %st(1)       # DOUBLE SUB" << endl;
+					break;
+				default:
+					Error("opérateur additif attendu");
+			}
+
+			cout << "\tsubq $8, %rsp         # Make space on general stack" << endl;
+			cout << "\tfstpl (%rsp)          # Store result back to general stack" << endl;
+
+			type1 = commonType;
+		} else {
+			cout << "\tpop %rbx" << endl;
+			cout << "\tpop %rax" << endl;
+
+			switch(adop){
+				case OR:
+					cout << "\torq %rbx, %rax\t# OR" << endl;
+					break;
+				case ADD:
+					cout << "\taddq %rbx, %rax\t# ADD" << endl;
+					break;
+				case SUB:
+					cout << "\tsubq %rbx, %rax\t# SUB" << endl;
+					break;
+				default:
+					Error("opérateur additif inconnu");
+			}
+
+			cout << "\tpush %rax" << endl;
+			type1 = commonType;
 		}
-		cout << "\tpush %rax"<<endl;			// store result
 	}
+
 	return type1;
 }
 
@@ -299,7 +384,9 @@ TYPE Type(void){
 void VarDeclarationPart(void){
 	if(current!=VAR) 	Error("caractère 'VAR' attendu");
 	cout << "\t.data"<<endl;
-	cout << "\tFormatString1:    .string '%llu\\n\n'"<<endl;
+	cout << "\tFormatString1:    .string \"%llu\\n\"" << endl;
+	cout << "\tFormatString2:    .string \"%f\\n\"" << endl;
+	cout << "\tFormatString3:    .string \"%c\\n\"" << endl;
 	cout << "\t.align 8"<<endl;
 	VarDeclaration();
 	while(current==SEMICOLON){
@@ -410,45 +497,66 @@ TYPE Expression(void){
 	int tag = ++TagNumber;
 	TYPE type1 = SimpleExpression();
 	if(current==RELOP){
-		oprel=RelationalOperator();
+		oprel = RelationalOperator();
 		TYPE type2 = SimpleExpression();
-		if (type1 != type2)
-			TypeError("Comparaison invalide : l'expression de gauche est de type " + 
-					TypeToString(type1) + ", mais celle de droite est de type " + 
-					TypeToString(type2));
 
-		cout << "\tpop %rax"<<endl;
-		cout << "\tpop %rbx"<<endl;
-		cout << "\tcmpq %rax, %rbx"<<endl;
+		// Determine the operator string for CheckBinaryOperationTypes
+		string opString;
+		switch(oprel){
+			case EQU:  opString = "=="; break;
+			case DIFF: opString = "!="; break;
+			case INF:  opString = "<"; break;
+			case SUP:  opString = ">"; break;
+			case INFE: opString = "<="; break;
+			case SUPE: opString = ">="; break;
+			default:   opString = "??"; break;
+		}
+
+		// Use CheckBinaryOperationTypes to check type compatibility
+		TYPE commonType = CheckBinaryOperationTypes(type1, type2, opString);
+
+		if (commonType == TYPE_DOUBLE) {
+			cout << "\tfldl (%rsp)       # b in st(0)" << endl;
+			cout << "\taddq $8, %rsp" << endl;
+			cout << "\tfldl (%rsp)       # a in st(0), b in st(1)" << endl;
+			cout << "\taddq $8, %rsp" << endl;
+			cout << "\tfucomip %st(0), %st(1)" << endl;
+			cout << "\tfstp %st(0)" << endl;
+		} else {
+			cout << "\tpop %rax" << endl;
+			cout << "\tpop %rbx" << endl;
+			cout << "\tcmpq %rax, %rbx" << endl;
+		}
+
 		switch(oprel){
 			case EQU:
-				cout << "\tje Vrai"<<tag<<"\t# If equal"<<endl;
+				cout << "\tje Vrai" << tag << "\t# If equal" << endl;
 				break;
 			case DIFF:
-				cout << "\tjne Vrai"<<tag<<"\t# If different"<<endl;
+				cout << "\tjne Vrai" << tag << "\t# If different" << endl;
 				break;
 			case SUPE:
-				cout << "\tjae Vrai"<<tag<<"\t# If above or equal"<<endl;
+				cout << "\tjae Vrai" << tag << "\t# If above or equal" << endl;
 				break;
 			case INFE:
-				cout << "\tjbe Vrai"<<tag<<"\t# If below or equal"<<endl;
+				cout << "\tjbe Vrai" << tag << "\t# If below or equal" << endl;
 				break;
 			case INF:
-				cout << "\tjb Vrai"<<tag<<"\t# If below"<<endl;
+				cout << "\tjb Vrai" << tag << "\t# If below" << endl;
 				break;
 			case SUP:
-				cout << "\tja Vrai"<<tag<<"\t# If above"<<endl;
+				cout << "\tja Vrai" << tag << "\t# If above" << endl;
 				break;
 			default:
 				Error("Opérateur de comparaison inconnu");
 		}
-		cout << "\tpush $0\t\t# False"<<endl;
-		cout << "\tjmp Suite"<<tag<<endl;
-		cout << "Vrai"<<tag<<":\tpush $0xFFFFFFFFFFFFFFFF\t\t# True"<<endl;	
-		cout << "Suite"<<tag<<":"<<endl;
+
+		cout << "\tpush $0\t\t# False" << endl;
+		cout << "\tjmp Suite" << tag << endl;
+		cout << "Vrai" << tag << ":\tpush $0xFFFFFFFFFFFFFFFF\t\t# True" << endl;
+		cout << "Suite" << tag << ":" << endl;
 		return TYPE_BOOLEAN;
-	} else
-	{
+	} else {
 		return type1;
 	}
 }
@@ -460,6 +568,7 @@ string AssignementStatement(void){
 	string variable;
 	if(current!=ID)
 		Error("Identificateur attendu");
+		
 	if(!IsDeclared(lexer->YYText())){
 		cerr << "Erreur : Variable '"<<lexer->YYText()<<"' non déclarée"<<endl;
 		exit(-1);
@@ -619,15 +728,24 @@ void BeginStatement(void){
 void DisplayStatement(void){
 	current = (TOKEN) lexer->yylex(); 
 	TYPE ExprType = Expression();
-	if (ExprType != TYPE_UNSIGNED_INT) {
-		Error("DISPLAY only supports INTEGER expressions.");
-	}
-	cout << "\tpop %rdx                     # The value to be displayed" << endl;
-	cout << "\tmovq $FormatString1, %rsi    # '%llu\n'" << endl;
-	cout << "\tmovl    $1, %edi" << endl;
-	cout << "\tmovl    $0, %eax" << endl;
-	cout << "\tcall    __printf_chk@PLT" << endl;
 
+	if (ExprType == TYPE_UNSIGNED_INT || ExprType == TYPE_BOOLEAN) {
+		cout << "\tpop %rdx                     # The value to be displayed" << endl;
+		cout << "\tmovq $FormatString1, %rsi    # '%llu\\n'" << endl;
+	} else if (ExprType == TYPE_DOUBLE) {
+		cout << "\tmovsd (%rsp), %xmm0          # Load double into xmm0" << endl;
+		cout << "\taddq $8, %rsp                # Pop stack" << endl;
+		cout << "\tmovq $FormatString2, %rsi    # '%f\\n'" << endl;
+	} else if (ExprType == TYPE_CHAR) {
+		cout << "\tpop %rdx                     # The value to be displayed" << endl;
+		cout << "\tmovq $FormatString3, %rsi    # '%c\\n'" << endl;
+	} else {
+		Error("DISPLAY ne supporte que les types INTEGER, DOUBLE et CHAR.");
+	}
+
+	cout << "\tmovl $1, %edi" << endl;
+	cout << "\tmovl $0, %eax" << endl;
+	cout << "\tcall __printf_chk@PLT" << endl;
 
 	current = (TOKEN) lexer->yylex(); 
 }

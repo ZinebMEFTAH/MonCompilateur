@@ -24,6 +24,8 @@ stringconst  \"[^\n"]+\"
 ws      [ \t\n\r]+
 alpha   [A-Za-z]
 digit   [0-9]
+charConst	\'[^\']\' 
+float 	[0-9]+\.[0-9]+
 number  {digit}+
 id	{alpha}({alpha}|{digit})*
 addop	(\+|\-|\|\|)
@@ -36,7 +38,9 @@ unknown [^\"A-Za-z0-9 \n\r\t\(\)\<\>\=\!\%\&\|\}\-\;\.]+
 {addop}		return ADDOP;
 {mulop}		return MULOP;
 {relop}		return RELOP;
+{charConst}	return CHARCONST;
 {number}	return NUMBER;
+{float}		return FLOATCONST;
 {stringconst}	return STRINGCONST;
 "["		return RBRACKET;
 "]"		return LBRACKET;
