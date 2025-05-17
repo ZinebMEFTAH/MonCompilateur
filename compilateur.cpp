@@ -108,18 +108,23 @@ TYPE CheckBinaryOperationTypes(TYPE t1, TYPE t2, string op) {
 // VarDeclaration := Ident {"," Ident} ":" Type
 
 
-// StatementPart := Statement {";" Statement} "."
+// StatementPart := StructuredStatement {";" StructuredStatement} "."
+// StructuredStatement := <compound statement> | <conditional statement> | <repetitive statement> | <with statement>
 // Statement := AssignementStatement | IfStatement | WhileStatement | ForStatement | BlockStatement
 // IfStatement := "IF" Expression "THEN" Statement [ "ELSE" Statement ]
 // WhileStatement := "WHILE" Expression "DO" Statement
 // ForStatement := "FOR" AssignementStatement "To" Expression "DO" Statement
-// <case statement> ::= case <expression> of <case list element> {; <case list element> } end
-// <case list element> ::= <case label list> : <statement> | <empty>
-// <case label list> ::= <constant> {, <constant> }
-// <empty>::=
-// BlockStatement := "BEGIN" Statement { ";" Statement } "END"
-// AssignementStatement := Letter "=" Expression
+// CaseStatement := case <expression> of <case list element> {; <case list element> } end
+// CaseListElement := <case label list> : <statement> | <empty>
+// CaseLabelList := <constant> {, <constant> }
+// CompoundStatement := "BEGIN" Statement { ";" Statement } "END"
+// AssignementStatement := Letter ":=" Expression
 // DisplayStatement := "DISPLAY" Expression
+// FunctionDeclaration ::= <function heading> <block>
+// FunctionHeading ::= function <identifier> : <result type> ; | function <identifier> ( <formal parameter section> {;<formal parameter section>} ) : <result type> ;
+// FormalParameterSection ::= <parameter group> | var <parameter group> |
+// ParameterGroup ::= <identifier> {, <identifier>} : <type identifier>
+
 
 // Expression := SimpleExpression [RelationalOperator SimpleExpression]
 // SimpleExpression := Term {AdditiveOperator Term}
@@ -686,6 +691,7 @@ void IfStatement(void){
 	cout << "Suite" << ifTag << ":" << endl;
 }
 
+// WhileStatement := "WHILE" Expression "DO" Statement
 void WhileStatement(void) {
 	int whileTag = ++TagNumber;
 
@@ -709,7 +715,7 @@ void WhileStatement(void) {
 	cout << "\tje EndWhile" << whileTag << "\t# Exit loop if false" << endl;
 
 	current = (TOKEN) lexer->yylex();
-	Statement();  // body of the loop
+	StructuredStatement();  // body of the loop
 
 	// Jump back to start
 	cout << "\tjmp While" << whileTag << endl;
@@ -718,6 +724,41 @@ void WhileStatement(void) {
 	cout << "EndWhile" << whileTag << ":" << endl;
 }
 
+// RepeatStatement ::= repeat <statement> {; <statement>} until <expression>
+void RepeatStatement(void){
+	int repeatTag = ++TagNumber;
+
+	// Label for start of loop
+	cout << "Repeat" << repeatTag << ":" << endl;
+
+	current = (TOKEN) lexer->yylex(); // read after 'REPEAT'
+
+	// Parse at least one statement
+	Statement();
+	while (current == SEMICOLON) {
+		current = (TOKEN) lexer->yylex();
+		Statement();
+	}
+
+	// Check for UNTIL
+	if (current != UNTIL)
+		Error("Expected 'UNTIL' after repeat block");
+
+	current = (TOKEN) lexer->yylex(); // read after 'UNTIL'
+
+	TYPE TypeCondition = Expression();
+	if (TypeCondition != TYPE_BOOLEAN)
+		TypeError("Condition in REPEAT UNTIL must be BOOLEAN");
+
+	cout << "\tpop %rax" << endl;
+	cout << "\tcmp $0, %rax" << endl;
+	cout << "\tje Repeat" << repeatTag << "\t# Repeat if condition is false" << endl;
+
+	// End label (optional, but good style)
+	cout << "EndRepeat" << repeatTag << ":" << endl;
+}
+
+// ForStatement := "FOR" AssignementStatement "To" Expression "DO" Statement
 void ForStatement(void){
 	int step = 1;
 	int forTag = ++TagNumber;
@@ -772,7 +813,7 @@ void ForStatement(void){
 }
 
 // BlockStatement := "BEGIN" Statement { ";" Statement } "END"
-void BeginStatement(void){
+void CompoundStatement(void){
 	current = (TOKEN) lexer->yylex(); 
 	Statement();
 
@@ -915,6 +956,57 @@ void DisplayStatement(void){
 	current = (TOKEN) lexer->yylex(); 
 }
 
+// <conditional statement> ::= <if statement> | <case statement>
+void ConditionalStatement(void){
+	if (current == IF)
+	{
+		IfStatement();
+	} else if (current == CASE)
+	{
+		CaseStatement();
+	}
+}
+
+// RepetitiveStatement::= <while statement> | <repeat statemant> | <for statement>
+void RepetitiveStatement(void){
+	if (current == WHILE){
+		WhileStatement();
+	} else if (current == REPEAT)
+	{
+		RepeatStatement();
+	} else if (current == FOR)
+	{
+		ForStatement();
+	}
+	
+	
+}
+
+// WithStatement ::= with <record variable list> do <statement>
+void WithStatement() {
+    Error("WITH statement requires RECORD types, which are not supported yet.");
+}
+
+// <structured statement> ::= <compound statement> | <conditional statement> | <repetitive statement> | <with statement>
+void StructuredStatement(void){
+	if (current == BEGIN0)
+	{
+		CompoundStatement();
+	} else if ((current == IF) || (current == CASE) )
+	{
+		ConditionalStatement();
+	} else if (current == REPEAT)
+	{
+		RepetitiveStatement();
+	} else if (current == WITH)
+	{
+		WithStatement();
+	} else {
+		Error("A weird input!");
+	}
+
+}
+
 // Statement := AssignementStatement | IfStatement | WhileStatement | ForStatement | BlockStatement
 void Statement(void){
 	if (current == ID)
@@ -935,7 +1027,7 @@ void Statement(void){
 	}
 	else if (current == BEGIN0)
 	{
-		BeginStatement();
+		CompoundStatement();
 	} else if (current == DISPLAY)
 	{
 		DisplayStatement();
@@ -944,20 +1036,127 @@ void Statement(void){
 	}
 }
 
+
+
 // StatementPart := Statement {";" Statement} "."
 void StatementPart(void){
 	cout << "\t.text\t\t# The following lines contain the program"<<endl;
 	cout << "\t.globl main\t# The main function must be visible from outside"<<endl;
 	cout << "main:\t\t\t# The main function body :"<<endl;
 	cout << "\tmovq %rsp, %rbp\t# Save the position of the stack's top"<<endl;
-	Statement();
+	StructuredStatement();
 	while(current==SEMICOLON){
 		current=(TOKEN) lexer->yylex();
-		Statement();
+		StructuredStatement();
 	}
 	if(current!=DOT)
 		Error("caractère '.' attendu");
 	current=(TOKEN) lexer->yylex();
+}
+
+// ParameterGroup ::= <identifier> {, <identifier>} : <type identifier>
+void ParameterGroup(void){
+	if (current != ID)
+	{
+		Error("Expected an identifier in the parameter group");
+	}
+	// Collect parameter identifiers for comment output
+	vector<string> paramNames;
+	paramNames.push_back(lexer->YYText());
+	current = (TOKEN)lexer->yylex();
+	while (current == COMMA)
+	{
+		current = (TOKEN)lexer->yylex();
+		if (current != ID)
+		{
+			Error("Expected an identifier in the parameter group after ','");
+		}
+		paramNames.push_back(lexer->YYText());
+		current = (TOKEN)lexer->yylex();
+	}
+
+	if (current != COLON)
+	{
+		Error("Expected a colon after the parameter group");
+	}
+	current = (TOKEN)lexer->yylex();
+
+	TYPE type = Type(); // Validate and consume type identifier
+	// Output a comment in assembly for each parameter group
+	cout << "\t# Parameter group parsed with type: " << TypeToString(type) << endl;
+}
+
+// FormalParameterSection ::= <parameter group> | var <parameter group> |
+void FormalParameterSection(void){
+	if (current == VAR)
+	{
+		current=(TOKEN) lexer->yylex();
+		ParameterGroup();
+	} else {
+		ParameterGroup();
+	}
+	
+}
+
+// FunctionHeading ::= function <identifier> : <result type> ; | function <identifier> ( <formal parameter section> {;<formal parameter section>} ) : <result type> ;
+void FunctionHeading(void){
+	if (current != FUNCTION)
+	{
+		Error("Expected 'function'");
+	}
+
+	current=(TOKEN) lexer->yylex();
+
+	if (current != ID)
+	{
+		Error("Expected an identifier after 'function'");
+	}
+	// Output function heading comments and label
+	cout << "\n\t# Function heading begins\n";
+	cout << "\t.globl " << lexer->YYText() << "\n";
+	cout << lexer->YYText() << ":\n";
+	current=(TOKEN) lexer->yylex();
+	if (current == LPARENT)
+	{
+		current=(TOKEN) lexer->yylex();
+		FormalParameterSection();
+		while (current == SEMICOLON )
+		{
+			current=(TOKEN) lexer->yylex();
+			FormalParameterSection();
+		}
+		if (current != RPARENT)
+		{
+			Error("Expected ')' after parameter list");
+		}
+		current=(TOKEN) lexer->yylex();
+	}
+
+	if (current != COLON)
+	{
+		Error("Expected ':' after function name or after the list of parameters");
+	}
+	current = (TOKEN)lexer->yylex();
+
+	Type(); // Parse the return type
+
+	if (current != SEMICOLON)
+	{
+		Error("Expected ';' at the end of function heading");
+	}
+	current = (TOKEN)lexer->yylex();
+	cout << "\t# Function return type parsed\n";
+}
+
+// FunctionDeclaration ::= <function heading> <block>
+void FunctionDeclaration(void){
+	FunctionHeading();
+	cout << "\tpush %rbp\t# Save base pointer" << endl;
+	cout << "\tmov %rsp, %rbp\t# Set new base pointer" << endl;
+	StatementPart();
+	cout << "\tmov %rbp, %rsp\t# Restore stack before returning" << endl;
+	cout << "\tpop %rbp\t# Restore base pointer" << endl;
+	cout << "\tret\t# Return from function" << endl;
 }
 
 // Program := [DeclarationPart] StatementPart
