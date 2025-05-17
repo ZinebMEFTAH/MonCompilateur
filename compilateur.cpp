@@ -113,6 +113,10 @@ TYPE CheckBinaryOperationTypes(TYPE t1, TYPE t2, string op) {
 // IfStatement := "IF" Expression "THEN" Statement [ "ELSE" Statement ]
 // WhileStatement := "WHILE" Expression "DO" Statement
 // ForStatement := "FOR" AssignementStatement "To" Expression "DO" Statement
+// <case statement> ::= case <expression> of <case list element> {; <case list element> } end
+// <case list element> ::= <case label list> : <statement> | <empty>
+// <case label list> ::= <constant> {, <constant> }
+// <empty>::=
 // BlockStatement := "BEGIN" Statement { ";" Statement } "END"
 // AssignementStatement := Letter "=" Expression
 // DisplayStatement := "DISPLAY" Expression
@@ -120,7 +124,7 @@ TYPE CheckBinaryOperationTypes(TYPE t1, TYPE t2, string op) {
 // Expression := SimpleExpression [RelationalOperator SimpleExpression]
 // SimpleExpression := Term {AdditiveOperator Term}
 // Term := Factor {MultiplicativeOperator Factor}
-// Factor := Number | Letter | "(" Expression ")"| "!" Factor
+// Factor := Number | Letter | ID | "(" Expression ")"| "!" Factor
 // Number := Digit{Digit}
 
 // AdditiveOperator := "+" | "-" | "||"
@@ -129,11 +133,34 @@ TYPE CheckBinaryOperationTypes(TYPE t1, TYPE t2, string op) {
 // Digit := "0"|"1"|"2"|"3"|"4"|"5"|"6"|"7"|"8"|"9"
 // Letter := "a"|...|"z"
 	
-TYPE Identifier(void){
+TYPE Identifier(void) {
 	string name = lexer->YYText();
-	cout << "\tpush " << name << endl;
+	TYPE type = VariablesWithTypes[name];
+
+	switch (type) {
+		case TYPE_UNSIGNED_INT:
+			cout << "\tmov " << name << "(%rip), %rax\t# Load integer variable" << endl;
+			cout << "\tpush %rax" << endl;
+			break;
+
+		case TYPE_BOOLEAN:
+		case TYPE_CHAR:
+			cout << "\tmovzbl " << name << "(%rip), %eax\t# Load byte (bool/char)" << endl;
+			cout << "\tpush %rax" << endl;
+			break;
+
+		case TYPE_DOUBLE:
+			cout << "\tmovsd " << name << "(%rip), %xmm0\t# Load double variable" << endl;
+			cout << "\tsubq $8, %rsp" << endl;
+			cout << "\tmovsd %xmm0, (%rsp)" << endl;
+			break;
+
+		default:
+			Error("Type de variable non supporté dans Identifier()");
+	}
+
 	current = (TOKEN) lexer->yylex();
-	return VariablesWithTypes[name];
+	return type;
 }
 
 TYPE Number(void) {
@@ -170,11 +197,16 @@ TYPE Factor(void) {
 	else if (current == NUMBER) {
 		return Number();
 	}
+	else if (current == FLOATCONST) {
+		return Number();
+	}
 	else if (current == CHARCONST) {
 		return CharConst();
 	}
 	else if (current == ID) {
 		return Identifier();
+	} else if (current == NOT) {
+		return ;
 	}
 	else {
 		Error("'(' ou chiffre ou lettre attendue");
@@ -564,31 +596,61 @@ TYPE Expression(void){
 void Statement(void);
 
 // AssignementStatement := Identifier ":=" Expression
-string AssignementStatement(void){
+string AssignementStatement(void) {
 	string variable;
-	if(current!=ID)
+	if (current != ID)
 		Error("Identificateur attendu");
-		
-	if(!IsDeclared(lexer->YYText())){
-		cerr << "Erreur : Variable '"<<lexer->YYText()<<"' non déclarée"<<endl;
+
+	if (!IsDeclared(lexer->YYText())) {
+		cerr << "Erreur : Variable '" << lexer->YYText() << "' non déclarée" << endl;
 		exit(-1);
 	}
 
-	variable=lexer->YYText();
+	variable = lexer->YYText();
 	TYPE type1 = VariablesWithTypes[variable];
 
-	current=(TOKEN) lexer->yylex();
-	if(current!=ASSIGN)
-		Error("caractères ':=' attendus");
+	current = (TOKEN) lexer->yylex();
+	if (current != ASSIGN)
+		Error("caractères '=' attendus");
 
-	current=(TOKEN) lexer->yylex();
+	current = (TOKEN) lexer->yylex();
 	TYPE type2 = Expression();
-	if (type1 != type2) {
-		TypeError("Affectation invalide : la variable '" + variable + 
-				  "' est de type " + TypeToString(type1) + 
+
+	// Allow assignment from numeric to boolean if value is 0 or 1
+	if (type1 == BOOLEAN && (type2 == INTEGER || type2 == DOUBLE)) {
+		string exprText = lexer->YYText(); // Get raw token text
+
+		if (exprText == "0" || exprText == "1" || exprText == "0.0" || exprText == "1.0") {
+			cout << "\t# Conversion numérique vers booléen" << endl;
+			cout << "\tcmp $0, %rax" << endl;           // compare with zero
+			cout << "\tsete %al" << endl;               // set %al = 1 if equal, 0 otherwise
+			cout << "\tmovzbq %al, %rax" << endl;       // zero-extend to 64-bit
+		} else {
+			TypeError("Affectation invalide : valeur numérique non booléenne assignée à '" + variable + "'");
+		}
+	}
+	else if (type1 != type2) {
+		TypeError("Affectation invalide : la variable '" + variable +
+				  "' est de type " + TypeToString(type1) +
 				  ", mais l'expression est de type " + TypeToString(type2));
 	}
-	cout << "\tpop "<<variable<<endl;
+
+	if (type1 == TYPE_UNSIGNED_INT) {
+		cout << "\tpop %rax" << endl;
+		cout << "\tmov %rax, " << variable << "(%rip)" << endl;
+	}
+	else if (type1 == TYPE_BOOLEAN || type1 == TYPE_CHAR) {
+		cout << "\tpop %rax" << endl;
+		cout << "\tmovb %al, " << variable << "(%rip)" << endl;
+	}
+	else if (type1 == TYPE_DOUBLE) {
+		cout << "\tmovsd (%rsp), %xmm0" << endl;
+		cout << "\taddq $8, %rsp" << endl;
+		cout << "\tmovsd %xmm0, " << variable << "(%rip)" << endl;
+	} else {
+	Error("Type inconnu pour l'affectation dans AssignementStatement()");
+	}
+
 	return variable;
 }
 
@@ -725,6 +787,109 @@ void BeginStatement(void){
 	current = (TOKEN) lexer->yylex();
 }
 
+void CaseStatement(void){
+	int CaseTag = ++TagNumber;
+
+	current = (TOKEN) lexer->yylex(); // read after 'CASE'
+
+	TYPE TypeExpression = Expression();
+
+	if (TypeExpression != TYPE_CHAR && TypeExpression != TYPE_UNSIGNED_INT && TypeExpression != TYPE_DOUBLE)
+		TypeError("Expression invalide dans la Case : type autorisé CHAR, INTEGER ou DOUBLE");
+
+	current = (TOKEN) lexer->yylex(); // read OF
+	if (current != OF)
+		Error("Expected 'OF' for the case statement!");
+
+	current = (TOKEN) lexer->yylex(); // read after 'OF'
+
+	// we pop according to the type of the expression
+	if (TypeExpression == TYPE_DOUBLE) {
+		cout << "\tmovsd (%rsp), %xmm0\t# Load double value for comparison" << endl;
+		cout << "\taddq $8, %rsp" << endl;
+	} else if (TypeExpression == TYPE_CHAR) {
+		cout << "\tpop %rax\t\t# Pop CHAR into rax" << endl;
+		cout << "\tmov %al, %bl\t\t# Save char in bl for comparison" << endl;
+	} else {
+		cout << "\tpop %rax\t\t# Pop INTEGER or BOOLEAN into rax" << endl;
+	}
+
+	CaseListElement(TypeExpression);
+
+	while (current == SEMICOLON) {
+		current = (TOKEN) lexer->yylex();
+		CaseListElement(TypeExpression);
+	}
+
+	if (current != END)
+		Error("Expected 'END' to close the CASE block");
+
+	// 🔹 Add this label for correct branching:
+	cout << "EndCase" << CaseTag << ":" << endl;
+
+	current = (TOKEN) lexer->yylex(); // read after 'END'
+}
+
+void CaseListElement(TYPE TypeExpression){
+	int caseLabel = ++TagNumber;
+
+	CaseLabelList(TypeExpression, caseLabel);
+
+	if (current != COLON)
+		Error("Expected ':' after case label list");
+	current = (TOKEN) lexer->yylex();
+
+	cout << "CaseMatch" << caseLabel << ":" << endl;
+
+	if (current != SEMICOLON) {
+		Statement();
+		cout << "\tjmp EndCase" << caseLabel << endl;
+	}
+
+	cout << "Skip" << caseLabel << ":" << endl;
+}
+
+TYPE CaseLabelList(TYPE TypeExpression, int labelTarget){
+	TYPE TypeConstant = TYPE_UNDEFINED;
+
+	if (current != NUMBER && current != CHARCONST && current != FLOATCONST)
+		Error("Case label must be a number, character, or float.");
+
+	while (true) {
+		int value;
+		if (current == NUMBER) {
+			value = stoi(lexer->YYText());
+			TypeConstant = TYPE_UNSIGNED_INT;
+		}
+		else if (current == CHARCONST) {
+			value = (int)lexer->YYText()[1];
+			TypeConstant = TYPE_CHAR;
+		} 
+		else if (current == FLOATCONST) {
+			value = stod(lexer->YYText());
+			TypeConstant = TYPE_DOUBLE;
+		}
+
+		if (TypeExpression != TypeConstant)
+			Error("Mismatched types between case expression and label.");
+
+		// Decide which register to use
+		string reg = (TypeExpression == TYPE_CHAR) ? "%bl" : "%rax";
+
+		cout << "\tcmp $" << value << ", " << reg << "\t# Compare with case label" << endl;
+		cout << "\tje CaseMatch" << labelTarget << endl;
+
+		current = (TOKEN) lexer->yylex();
+
+		if (current != COMMA) break; // no more constants
+		current = (TOKEN) lexer->yylex(); // skip comma
+	}
+
+	cout << "\tjmp Skip" << labelTarget << "\t# No match, skip this case block" << endl;
+
+	return TypeConstant;
+}
+
 void DisplayStatement(void){
 	current = (TOKEN) lexer->yylex(); 
 	TYPE ExprType = Expression();
@@ -764,6 +929,9 @@ void Statement(void){
 	} else if (current == FOR)
 	{
 		ForStatement();
+	} else if (current == CASE)
+	{
+		CaseStatement();
 	}
 	else if (current == BEGIN0)
 	{

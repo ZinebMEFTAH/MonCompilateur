@@ -61,6 +61,8 @@ unknown [^\"A-Za-z0-9 \n\r\t\(\)\<\>\=\!\%\&\|\}\-\;\.]+
 "if"	return IF;
 "while"	return WHILE;
 "for"	return FOR;
+"case"	return CASE;
+"of"	return OF;
 "begin"	return BEGIN0;
 "true"  return TRUE0;
 "false" return FALSE0;
