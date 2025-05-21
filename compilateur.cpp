@@ -17,7 +17,7 @@
 
 // Build with "make compilateur"
 
-
+#include <vector>
 #include <string>
 #include <iostream>
 #include <cstdlib>
@@ -172,7 +172,10 @@ TYPE Number(void) {
 	string txt = lexer->YYText();
 	cout << "\tpush $" << txt << "\t# push constant" << endl;
 	current = (TOKEN) lexer->yylex();
-	return VariablesWithTypes[txt];
+	if (txt.find('.') != string::npos)
+		return TYPE_DOUBLE;
+	else
+		return TYPE_UNSIGNED_INT;
 }
 
 TYPE CharConst(void) {
@@ -185,6 +188,10 @@ TYPE CharConst(void) {
 }
 
 TYPE Expression(void);			// Called by Term() and calls Term()
+void VarDeclaration(void);
+void StructuredStatement(void);
+void CaseListElement(TYPE);
+TYPE CaseLabelList(TYPE, int);
 
 TYPE Factor(void) {
 	if (current == LPARENT) {
@@ -211,9 +218,16 @@ TYPE Factor(void) {
 	else if (current == ID) {
 		return Identifier();
 	} else if (current == NOT) {
-		return ;
-	}
-	else {
+		current = (TOKEN) lexer->yylex();
+		TYPE t = Factor();
+		if (t != TYPE_BOOLEAN)
+			TypeError("L'opérateur '!' ne peut s'appliquer qu'à un booléen");
+
+		cout << "\tpop %rax" << endl;
+		cout << "\tnot %rax" << endl;
+		cout << "\tpush %rax" << endl;
+		return TYPE_BOOLEAN;
+    } else {
 		Error("'(' ou chiffre ou lettre attendue");
 		return TYPE_UNDEFINED;  // Optional fallback
 	}
@@ -420,6 +434,7 @@ TYPE Type(void){
 // VarDeclarationPart := "VAR" VarDeclaration {";" VarDeclaration} "."
 void VarDeclarationPart(void){
 	if(current!=VAR) 	Error("caractère 'VAR' attendu");
+	current = (TOKEN) lexer->yylex();  // saute le mot-clé VAR
 	cout << "\t.data"<<endl;
 	cout << "\tFormatString1:    .string \"%llu\\n\"" << endl;
 	cout << "\tFormatString2:    .string \"%f\\n\"" << endl;
@@ -622,7 +637,7 @@ string AssignementStatement(void) {
 	TYPE type2 = Expression();
 
 	// Allow assignment from numeric to boolean if value is 0 or 1
-	if (type1 == BOOLEAN && (type2 == INTEGER || type2 == DOUBLE)) {
+if (type1 == TYPE_BOOLEAN && (type2 == TYPE_UNSIGNED_INT || type2 == TYPE_DOUBLE)) {
 		string exprText = lexer->YYText(); // Get raw token text
 
 		if (exprText == "0" || exprText == "1" || exprText == "0.0" || exprText == "1.0") {
@@ -1112,33 +1127,35 @@ void FunctionHeading(void){
 		Error("Expected an identifier after 'function'");
 	}
 	// Output function heading comments and label
-	cout << "\n\t# Function heading begins\n";
-	cout << "\t.globl " << lexer->YYText() << "\n";
-	cout << lexer->YYText() << ":\n";
-	current=(TOKEN) lexer->yylex();
+	string funcName = lexer->YYText();  // Sauvegarder le nom avant de passer au token suivant
+	cout << "\t.globl " << funcName << "\n";
+	cout << funcName << ":\n";
+	current=(TOKEN) lexer->yylex();	
 	if (current == LPARENT)
 	{
-		current=(TOKEN) lexer->yylex();
+		current = (TOKEN) lexer->yylex();
 		FormalParameterSection();
 		while (current == SEMICOLON )
 		{
-			current=(TOKEN) lexer->yylex();
+			current = (TOKEN) lexer->yylex();
 			FormalParameterSection();
 		}
 		if (current != RPARENT)
 		{
 			Error("Expected ')' after parameter list");
 		}
-		current=(TOKEN) lexer->yylex();
+		current = (TOKEN) lexer->yylex();
 	}
 
+	// now check for the colon
 	if (current != COLON)
 	{
 		Error("Expected ':' after function name or after the list of parameters");
 	}
-	current = (TOKEN)lexer->yylex();
+	current = (TOKEN) lexer->yylex();
 
-	Type(); // Parse the return type
+	TYPE returnType = Type();  // capture the return type
+	VariablesWithTypes[funcName] = returnType;  // treat function name as variable
 
 	if (current != SEMICOLON)
 	{
@@ -1163,6 +1180,11 @@ void FunctionDeclaration(void){
 void Program(void){
 	if(current==VAR)
 		VarDeclarationPart();
+
+	while (current == FUNCTION) {
+		FunctionDeclaration(); // 🔧 appelle ta fonction existante
+	}
+
 	StatementPart();	
 }
 

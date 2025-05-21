@@ -1,27 +1,45 @@
-var 
-    a,b,c   : BOOLEAN ;
-    d,e,f,g : INTEGER.
+VAR
+  x, y, i: INTEGER;
+  ch: CHAR;
+  flag: BOOLEAN;
+  d: DOUBLE.
 
-begin
-  x := 1;
-  y := 2;
+BEGIN
+  x := 10;
+  y := 5;
+  d := 2.5;
 
-  if x == 1 then
-    y := 3
-  else
-    y := 4;
+  DISPLAY x;
+  DISPLAY d;
 
-  while x == 1 do
-    begin
-      y := y + 1;
-      x := x - 1
-    end;
+  IF x > y THEN
+    DISPLAY x
+  ELSE
+    DISPLAY y;
 
-  for i := 0 to 3 do
-    y := y + 1;
+  WHILE x > 0 DO
+    BEGIN
+      DISPLAY x;
+      x := x - 1;
+    END;
 
-  begin
-    x := 5;
-    y := 6
-  end
-end.
+  REPEAT
+    y := y - 1;
+    DISPLAY y;
+  UNTIL y = 0;
+
+  FOR i := 0 TO 5 DO
+    DISPLAY i;
+
+  CASE x OF
+    1: DISPLAY 1;
+    2, 3: DISPLAY 2;
+    10: DISPLAY 10;
+  END;
+
+  flag := TRUE;
+  ch := 'A';
+
+  x := Add(3, 4);
+
+END.

@@ -49,8 +49,8 @@ unknown [^\"A-Za-z0-9 \n\r\t\(\)\<\>\=\!\%\&\|\}\-\;\.]+
 "."		return DOT;
 ":="	return ASSIGN;
 ":"		return COLON;
-"("		return RPARENT;
-")"		return LPARENT;
+"("		return LPARENT;
+")"		return RPARENT;
 "!"		return NOT;
 "then"	return THEN;
 "else"	return ELSE;
