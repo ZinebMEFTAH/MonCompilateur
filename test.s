@@ -206,11 +206,20 @@ EndFor20:
 	addq   $8, %rsp                 # restore stack
 	mov x(%rip), %rax	# Load integer variable
 	push %rax
+	# Affichage de type: UNSIGNED_INT
+	pop    %rax                     # integer to print
+	mov    %rax, %rsi               # 2nd arg → RSI
+	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
+	movl   $0, %eax                  # no SSE regs
+	call   printf@PLT
+	#CASE STARTED
+	mov x(%rip), %rax	# Load integer variable
+	push %rax
 	pop %rax		# Pop INTEGER or BOOLEAN into rax
 	cmp $1, %rax	# Compare with case label
-	je CaseMatch27
-	jmp Skip27	# No match, skip this case block
-CaseMatch27:
+	je CaseMatch28
+	jmp Skip28	# No match, skip this case block
+CaseMatch28:
 	push $1
 	# Affichage de type: UNSIGNED_INT
 	pop    %rax                     # integer to print
@@ -218,14 +227,14 @@ CaseMatch27:
 	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
 	movl   $0, %eax                  # no SSE regs
 	call   printf@PLT
-	jmp EndCase25
-Skip27:
+	jmp EndCase26
+Skip28:
 	cmp $2, %rax	# Compare with case label
-	je CaseMatch29
-	cmp $3, %rax	# Compare with case label
-	je CaseMatch29
-	jmp Skip29	# No match, skip this case block
-CaseMatch29:
+	je CaseMatch30
+	cmp $0, %rax	# Compare with case label
+	je CaseMatch30
+	jmp Skip30	# No match, skip this case block
+CaseMatch30:
 	push $2
 	# Affichage de type: UNSIGNED_INT
 	pop    %rax                     # integer to print
@@ -233,12 +242,12 @@ CaseMatch29:
 	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
 	movl   $0, %eax                  # no SSE regs
 	call   printf@PLT
-	jmp EndCase25
-Skip29:
+	jmp EndCase26
+Skip30:
 	cmp $10, %rax	# Compare with case label
-	je CaseMatch31
-	jmp Skip31	# No match, skip this case block
-CaseMatch31:
+	je CaseMatch32
+	jmp Skip32	# No match, skip this case block
+CaseMatch32:
 	push $10
 	# Affichage de type: UNSIGNED_INT
 	pop    %rax                     # integer to print
@@ -246,28 +255,9 @@ CaseMatch31:
 	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
 	movl   $0, %eax                  # no SSE regs
 	call   printf@PLT
-	jmp EndCase25
-Skip31:
-EndCase25:
-	movsd d(%rip), %xmm0	# Load double variable
-	subq $8, %rsp
-	movsd %xmm0, (%rsp)
-	# Affichage de type: DOUBLE
-	movsd  (%rsp), %xmm0            # load double from stack
-	addq   $8, %rsp                 # pop it
-	subq   $8, %rsp                 # align stack (RSP%16==8)
-	leaq   FormatString2(%rip), %rdi# format string → RDI
-	movl   $1, %eax                  # one SSE-reg in varargs
-	call   printf@PLT
-	addq   $8, %rsp                 # restore stack
-	push $0xFFFFFFFFFFFFFFFF		# True
-	pop %rax
-	movb %al, flag(%rip)
-	movq $0, %rax
-	movb $65, %al
-	push %rax	# push char 'A'
-	pop %rax
-	movb %al, ch(%rip)
+	jmp EndCase26
+Skip32:
+EndCase26:
 	movsd d(%rip), %xmm0	# Load double variable
 	subq $8, %rsp
 	movsd %xmm0, (%rsp)

@@ -37,19 +37,14 @@ BEGIN
     DISPLAY i;
 
   DISPLAY d;
+  DISPLAY x;
 
   CASE x OF
     1: DISPLAY 1;
-    2, 3: DISPLAY 2;
+    2, 0: DISPLAY 2;
     10: DISPLAY 10;
   END;
 
   DISPLAY d;
-
-  flag := TRUE;
-  ch := 'A';
-
-    DISPLAY d;
-
   
 END.

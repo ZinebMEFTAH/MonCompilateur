@@ -116,7 +116,7 @@ TYPE CheckBinaryOperationTypes(TYPE t1, TYPE t2, string op) {
 // IfStatement := "IF" Expression "THEN" Statement [ "ELSE" Statement ]
 // WhileStatement := "WHILE" Expression "DO" Statement
 // ForStatement := "FOR" AssignementStatement "To" Expression "DO" Statement
-// CaseStatement := case <expression> of <case list element> {; <case list element> } end
+// CaseStatement := case <expression> of <case list element> {; <case list element> } [ ELSE StatementSequence ] end
 // CaseListElement := <case label list> : <statement> | <empty>
 // CaseLabelList := <constant> {, <constant> }
 // CompoundStatement := "BEGIN" Statement { ";" Statement } "END"
@@ -877,6 +877,8 @@ void CompoundStatement(void){
 }
 
 void CaseStatement(void){
+	cout << "\t#CASE STARTED"<< endl;
+
 	int CaseTag = ++TagNumber;
 
 	current = (TOKEN) lexer->yylex(); // read after 'CASE'
@@ -911,7 +913,7 @@ void CaseStatement(void){
 		if (current == END) break;
 		CaseListElement(TypeExpression, CaseTag);
 	}
-
+	
 	if (current != END)
 		Error("Expected 'END' to close the CASE block");
 
