@@ -801,6 +801,8 @@ void RepeatStatement(void){
 
 // ForStatement := "FOR" AssignementStatement "To" Expression "DO" Statement
 void ForStatement(void){
+	cout << "\t#FOR LOOP STARTED"<< endl;
+
 	int step = 1;
 	int forTag = ++TagNumber;
 
@@ -822,6 +824,7 @@ void ForStatement(void){
 	}
 
     cout << "\tpop %rdx\n";
+	cout << "\tmov %rdx, %rbx    # keep limit in callee-saved reg\n";
 
 	if (current != DO) Error("Expected 'DO'");
 	current = (TOKEN) lexer->yylex();
@@ -847,8 +850,8 @@ void ForStatement(void){
 
 	// test & jump back
     cout << "TestFor" << forTag << ":\n";
-    cout << "\tcmp %rax, %rdx    # limit - i\n";
-    cout << "\tje LoopFor" << forTag << "   # while i <= limit\n";
+    cout << "\tcmp %rbx, %rax    # compare limit (rbx), counter\n";
+    cout << "\tjbe LoopFor" << forTag << "\n";
     cout << "EndFor" << forTag << ":\n";
 }
 

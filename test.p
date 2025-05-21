@@ -32,6 +32,7 @@ BEGIN
 
   DISPLAY d;
 
+
   FOR i := 0 TO 5 DO
     DISPLAY i;
 

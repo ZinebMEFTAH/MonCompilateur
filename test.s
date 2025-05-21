@@ -168,12 +168,14 @@ EndRepeat15:
 	movl   $1, %eax                  # one SSE-reg in varargs
 	call   printf@PLT
 	addq   $8, %rsp                 # restore stack
+	#FOR LOOP STARTED
 	push $0
 	pop %rax
 	mov %rax, i(%rip)
 	mov i(%rip), %rax    # load initial i
 	push $5
 	pop %rdx
+	mov %rdx, %rbx    # keep limit in callee-saved reg
 	jmp TestFor20
 LoopFor20:
 	mov i(%rip), %rax	# Load integer variable
@@ -188,8 +190,8 @@ LoopFor20:
 	add $1, %rax
 	mov %rax, i(%rip)    # store incremented counter
 TestFor20:
-	cmp %rax, %rdx    # limit - i
-	je LoopFor20   # while i <= limit
+	cmp %rbx, %rax    # compare limit (rbx), counter
+	jbe LoopFor20
 EndFor20:
 	movsd d(%rip), %xmm0	# Load double variable
 	subq $8, %rsp
