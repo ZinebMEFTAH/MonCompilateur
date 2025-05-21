@@ -113,7 +113,18 @@ Suite11:
 	mov %rax, x(%rip)
 	jmp While10
 EndWhile10:
-Repeat14:
+	movsd d(%rip), %xmm0	# Load double variable
+	subq $8, %rsp
+	movsd %xmm0, (%rsp)
+	# Affichage de type: DOUBLE
+	movsd  (%rsp), %xmm0            # load double from stack
+	addq   $8, %rsp                 # pop it
+	subq   $8, %rsp                 # align stack (RSP%16==8)
+	leaq   FormatString2(%rip), %rdi# format string → RDI
+	movl   $1, %eax                  # one SSE-reg in varargs
+	call   printf@PLT
+	addq   $8, %rsp                 # restore stack
+Repeat15:
 	mov y(%rip), %rax	# Load integer variable
 	push %rax
 	push $1
@@ -137,23 +148,34 @@ Repeat14:
 	pop %rax
 	pop %rbx
 	cmpq %rax, %rbx
-	je Vrai17	# If equal
+	je Vrai18	# If equal
 	push $0		# False
-	jmp Suite17
-Vrai17:	push $0xFFFFFFFFFFFFFFFF		# True
-Suite17:
+	jmp Suite18
+Vrai18:	push $0xFFFFFFFFFFFFFFFF		# True
+Suite18:
 	pop %rax
 	cmp $0, %rax
-	je Repeat14	# Repeat if condition is false
-EndRepeat14:
+	je Repeat15	# Repeat if condition is false
+EndRepeat15:
+	movsd d(%rip), %xmm0	# Load double variable
+	subq $8, %rsp
+	movsd %xmm0, (%rsp)
+	# Affichage de type: DOUBLE
+	movsd  (%rsp), %xmm0            # load double from stack
+	addq   $8, %rsp                 # pop it
+	subq   $8, %rsp                 # align stack (RSP%16==8)
+	leaq   FormatString2(%rip), %rdi# format string → RDI
+	movl   $1, %eax                  # one SSE-reg in varargs
+	call   printf@PLT
+	addq   $8, %rsp                 # restore stack
 	push $0
 	pop %rax
 	mov %rax, i(%rip)
-	mov i, %rax
+	mov i(%rip), %rax    # load initial i
 	push $5
 	pop %rdx
-	jmp TestFor18
-LoopFor18:
+	jmp TestFor20
+LoopFor20:
 	mov i(%rip), %rax	# Load integer variable
 	push %rax
 	# Affichage de type: UNSIGNED_INT
@@ -162,19 +184,31 @@ LoopFor18:
 	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
 	movl   $0, %eax                  # no SSE regs
 	call   printf@PLT
+	mov i(%rip), %rax    # reload counter
 	add $1, %rax
-	mov %rax, i
-TestFor18:
-	cmp %rax, %rdx
-	jb LoopFor18	# If still less than limit, continue
-EndFor18:
+	mov %rax, i(%rip)    # store incremented counter
+TestFor20:
+	cmp %rax, %rdx    # limit - i
+	je LoopFor20   # while i <= limit
+EndFor20:
+	movsd d(%rip), %xmm0	# Load double variable
+	subq $8, %rsp
+	movsd %xmm0, (%rsp)
+	# Affichage de type: DOUBLE
+	movsd  (%rsp), %xmm0            # load double from stack
+	addq   $8, %rsp                 # pop it
+	subq   $8, %rsp                 # align stack (RSP%16==8)
+	leaq   FormatString2(%rip), %rdi# format string → RDI
+	movl   $1, %eax                  # one SSE-reg in varargs
+	call   printf@PLT
+	addq   $8, %rsp                 # restore stack
 	mov x(%rip), %rax	# Load integer variable
 	push %rax
 	pop %rax		# Pop INTEGER or BOOLEAN into rax
 	cmp $1, %rax	# Compare with case label
-	je CaseMatch24
-	jmp Skip24	# No match, skip this case block
-CaseMatch24:
+	je CaseMatch27
+	jmp Skip27	# No match, skip this case block
+CaseMatch27:
 	push $1
 	# Affichage de type: UNSIGNED_INT
 	pop    %rax                     # integer to print
@@ -182,14 +216,14 @@ CaseMatch24:
 	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
 	movl   $0, %eax                  # no SSE regs
 	call   printf@PLT
-	jmp EndCase22
-Skip24:
+	jmp EndCase25
+Skip27:
 	cmp $2, %rax	# Compare with case label
-	je CaseMatch26
+	je CaseMatch29
 	cmp $3, %rax	# Compare with case label
-	je CaseMatch26
-	jmp Skip26	# No match, skip this case block
-CaseMatch26:
+	je CaseMatch29
+	jmp Skip29	# No match, skip this case block
+CaseMatch29:
 	push $2
 	# Affichage de type: UNSIGNED_INT
 	pop    %rax                     # integer to print
@@ -197,12 +231,12 @@ CaseMatch26:
 	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
 	movl   $0, %eax                  # no SSE regs
 	call   printf@PLT
-	jmp EndCase22
-Skip26:
+	jmp EndCase25
+Skip29:
 	cmp $10, %rax	# Compare with case label
-	je CaseMatch28
-	jmp Skip28	# No match, skip this case block
-CaseMatch28:
+	je CaseMatch31
+	jmp Skip31	# No match, skip this case block
+CaseMatch31:
 	push $10
 	# Affichage de type: UNSIGNED_INT
 	pop    %rax                     # integer to print
@@ -210,9 +244,20 @@ CaseMatch28:
 	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
 	movl   $0, %eax                  # no SSE regs
 	call   printf@PLT
-	jmp EndCase22
-Skip28:
-EndCase22:
+	jmp EndCase25
+Skip31:
+EndCase25:
+	movsd d(%rip), %xmm0	# Load double variable
+	subq $8, %rsp
+	movsd %xmm0, (%rsp)
+	# Affichage de type: DOUBLE
+	movsd  (%rsp), %xmm0            # load double from stack
+	addq   $8, %rsp                 # pop it
+	subq   $8, %rsp                 # align stack (RSP%16==8)
+	leaq   FormatString2(%rip), %rdi# format string → RDI
+	movl   $1, %eax                  # one SSE-reg in varargs
+	call   printf@PLT
+	addq   $8, %rsp                 # restore stack
 	push $0xFFFFFFFFFFFFFFFF		# True
 	pop %rax
 	movb %al, flag(%rip)
@@ -221,6 +266,17 @@ EndCase22:
 	push %rax	# push char 'A'
 	pop %rax
 	movb %al, ch(%rip)
+	movsd d(%rip), %xmm0	# Load double variable
+	subq $8, %rsp
+	movsd %xmm0, (%rsp)
+	# Affichage de type: DOUBLE
+	movsd  (%rsp), %xmm0            # load double from stack
+	addq   $8, %rsp                 # pop it
+	subq   $8, %rsp                 # align stack (RSP%16==8)
+	leaq   FormatString2(%rip), %rdi# format string → RDI
+	movl   $1, %eax                  # one SSE-reg in varargs
+	call   printf@PLT
+	addq   $8, %rsp                 # restore stack
 	movq %rbp, %rsp		# Restore the position of the stack's top
 	ret			# Return from main function
 	.section .note.GNU-stack,"",@progbits

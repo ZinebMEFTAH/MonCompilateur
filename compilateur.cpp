@@ -805,12 +805,13 @@ void ForStatement(void){
 	int forTag = ++TagNumber;
 
 	current = (TOKEN) lexer->yylex(); // read after 'FOR'
-	string CurrentAssignedVar = AssignementStatement();
-	TYPE loopVarType = VariablesWithTypes[CurrentAssignedVar];
+    string var = AssignementStatement();
+
+	TYPE loopVarType = VariablesWithTypes[var];
 	if (loopVarType != TYPE_UNSIGNED_INT) {
 		TypeError("FOR loop variable must be INTEGER");
 	}
-	cout << "\tmov " << CurrentAssignedVar << ", %rax" << endl;
+    cout << "\tmov " << var << "(%rip), %rax    # load initial " << var << endl;
 
 	if (current != TO) Error("Expected 'TO'");
 	current = (TOKEN) lexer->yylex();
@@ -820,7 +821,7 @@ void ForStatement(void){
 		TypeError("FOR loop to value must be INTEGER");
 	}
 
-	cout << "\tpop %rdx" << endl;
+    cout << "\tpop %rdx\n";
 
 	if (current != DO) Error("Expected 'DO'");
 	current = (TOKEN) lexer->yylex();
@@ -840,17 +841,15 @@ void ForStatement(void){
 	cout << "LoopFor" << forTag << ":" << endl;
 	StructuredStatement();  // loop body
 
-	// Increment
-	cout << "\tadd $" << step << ", %rax" << endl;
-	cout << "\tmov %rax, " << CurrentAssignedVar << endl;
+    cout << "\tmov " << var << "(%rip), %rax    # reload counter\n";
+    cout << "\tadd $" << step << ", %rax\n";
+    cout << "\tmov %rax, " << var << "(%rip)    # store incremented counter\n";
 
-	// Test condition
-	cout << "TestFor" << forTag << ":" << endl;
-	cout << "\tcmp %rax, %rdx" << endl;
-	cout << "\tjb LoopFor" << forTag << "\t# If still less than limit, continue" << endl;
-
-	// End of loop
-	cout << "EndFor" << forTag << ":" << endl;
+	// test & jump back
+    cout << "TestFor" << forTag << ":\n";
+    cout << "\tcmp %rax, %rdx    # limit - i\n";
+    cout << "\tje LoopFor" << forTag << "   # while i <= limit\n";
+    cout << "EndFor" << forTag << ":\n";
 }
 
 // BlockStatement := "BEGIN" Statement { ";" Statement } "END"

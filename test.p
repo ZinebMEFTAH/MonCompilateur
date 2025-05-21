@@ -23,13 +23,19 @@ BEGIN
       x := x - 1;
     END;
 
+  DISPLAY d;
+
   REPEAT
     y := y - 1;
     DISPLAY y;
   UNTIL y == 0;
 
+  DISPLAY d;
+
   FOR i := 0 TO 5 DO
     DISPLAY i;
+
+  DISPLAY d;
 
   CASE x OF
     1: DISPLAY 1;
@@ -37,7 +43,12 @@ BEGIN
     10: DISPLAY 10;
   END;
 
+  DISPLAY d;
+
   flag := TRUE;
   ch := 'A';
+
+    DISPLAY d;
+
   
 END.
