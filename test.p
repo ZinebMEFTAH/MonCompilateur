@@ -8,8 +8,11 @@ BEGIN
   x := 10;
   y := 5;
   d := 2.5;
+  ch := 'a';
 
-  DISPLAY x;
+  flag := true;
+
+  DISPLAY flag;
   DISPLAY d;
 
   IF x > y THEN

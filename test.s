@@ -1,4 +1,7 @@
 			# This code was produced by the CERI Compiler
+	.section .rodata
+FormatUInt: .asciz "%llu\n"
+
 	.data
 	FormatString1:    .string "%llu\n"
 	FormatString2:    .string "%f\n"
@@ -26,14 +29,27 @@ main:			# The main function body :
 	movsd (%rsp), %xmm0
 	addq $8, %rsp
 	movsd %xmm0, d(%rip)
-	mov x(%rip), %rax	# Load integer variable
+	movq $0, %rax
+	movb $97, %al
+	push %rax	# push char 'a'
+	pop %rax
+	movb %al, ch(%rip)
+	push $0xFFFFFFFFFFFFFFFF		# True
+	pop %rax
+	movb %al, flag(%rip)
+	movzbl flag(%rip), %eax	# Load byte (bool/char)
 	push %rax
-	# Affichage de type: UNSIGNED_INT
-	pop    %rax                     # integer to print
-	mov    %rax, %rsi               # 2nd arg → RSI
-	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
-	movl   $0, %eax                  # no SSE regs
+	# Affichage de type: BOOLEAN
+	# print boolean in %rax
+	pop    %rax                     # boolean byte (0x00 or 0xFF)
+	testb  %al, %al                 # set flags on AL
+	setne  %al                      # AL=1 if non-zero, else 0
+	movzbq %al, %rax                # zero-extend AL -> full RAX (0 or 1)
+	mov    %rax, %rsi               # 2nd arg -> RSI
+	leaq   FormatUInt(%rip), %rdi   # 1st arg -> RDI
+	movl   $0, %eax                 # no SSE args
 	call   printf@PLT
+
 	movsd d(%rip), %xmm0	# Load double variable
 	subq $8, %rsp
 	movsd %xmm0, (%rsp)
@@ -52,56 +68,62 @@ main:			# The main function body :
 	pop %rax
 	pop %rbx
 	cmpq %rax, %rbx
-	ja Vrai7	# If above
+	ja Vrai8	# If above
 	push $0		# False
-	jmp Suite7
-Vrai7:	push $0xFFFFFFFFFFFFFFFF		# True
-Suite7:
+	jmp Suite8
+Vrai8:	push $0xFFFFFFFFFFFFFFFF		# True
+Suite8:
 	pop %rax
 	cmp $0, %rax
-	je Else6	# If condition is false, jump to Else
+	je Else7	# If condition is false, jump to Else
 	mov x(%rip), %rax	# Load integer variable
 	push %rax
 	# Affichage de type: UNSIGNED_INT
+	# print integer in %rax
 	pop    %rax                     # integer to print
 	mov    %rax, %rsi               # 2nd arg → RSI
-	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
-	movl   $0, %eax                  # no SSE regs
+	leaq   FormatUInt(%rip), %rdi   # 1st arg → RDI
+	movl   $0, %eax                 # no SSE args
 	call   printf@PLT
-	jmp Suite6
-Else6:
+
+	jmp Suite7
+Else7:
 	mov y(%rip), %rax	# Load integer variable
 	push %rax
 	# Affichage de type: UNSIGNED_INT
+	# print integer in %rax
 	pop    %rax                     # integer to print
 	mov    %rax, %rsi               # 2nd arg → RSI
-	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
-	movl   $0, %eax                  # no SSE regs
+	leaq   FormatUInt(%rip), %rdi   # 1st arg → RDI
+	movl   $0, %eax                 # no SSE args
 	call   printf@PLT
-Suite6:
-While10:
+
+Suite7:
+While11:
 	mov x(%rip), %rax	# Load integer variable
 	push %rax
 	push $0
 	pop %rax
 	pop %rbx
 	cmpq %rax, %rbx
-	ja Vrai11	# If above
+	ja Vrai12	# If above
 	push $0		# False
-	jmp Suite11
-Vrai11:	push $0xFFFFFFFFFFFFFFFF		# True
-Suite11:
+	jmp Suite12
+Vrai12:	push $0xFFFFFFFFFFFFFFFF		# True
+Suite12:
 	pop %rax
 	cmp $0, %rax
-	je EndWhile10	# Exit loop if false
+	je EndWhile11	# Exit loop if false
 	mov x(%rip), %rax	# Load integer variable
 	push %rax
 	# Affichage de type: UNSIGNED_INT
+	# print integer in %rax
 	pop    %rax                     # integer to print
 	mov    %rax, %rsi               # 2nd arg → RSI
-	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
-	movl   $0, %eax                  # no SSE regs
+	leaq   FormatUInt(%rip), %rdi   # 1st arg → RDI
+	movl   $0, %eax                 # no SSE args
 	call   printf@PLT
+
 	mov x(%rip), %rax	# Load integer variable
 	push %rax
 	push $1
@@ -111,8 +133,8 @@ Suite11:
 	push %rax
 	pop %rax
 	mov %rax, x(%rip)
-	jmp While10
-EndWhile10:
+	jmp While11
+EndWhile11:
 	movsd d(%rip), %xmm0	# Load double variable
 	subq $8, %rsp
 	movsd %xmm0, (%rsp)
@@ -124,7 +146,7 @@ EndWhile10:
 	movl   $1, %eax                  # one SSE-reg in varargs
 	call   printf@PLT
 	addq   $8, %rsp                 # restore stack
-Repeat15:
+Repeat16:
 	mov y(%rip), %rax	# Load integer variable
 	push %rax
 	push $1
@@ -137,26 +159,28 @@ Repeat15:
 	mov y(%rip), %rax	# Load integer variable
 	push %rax
 	# Affichage de type: UNSIGNED_INT
+	# print integer in %rax
 	pop    %rax                     # integer to print
 	mov    %rax, %rsi               # 2nd arg → RSI
-	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
-	movl   $0, %eax                  # no SSE regs
+	leaq   FormatUInt(%rip), %rdi   # 1st arg → RDI
+	movl   $0, %eax                 # no SSE args
 	call   printf@PLT
+
 	mov y(%rip), %rax	# Load integer variable
 	push %rax
 	push $0
 	pop %rax
 	pop %rbx
 	cmpq %rax, %rbx
-	je Vrai18	# If equal
+	je Vrai19	# If equal
 	push $0		# False
-	jmp Suite18
-Vrai18:	push $0xFFFFFFFFFFFFFFFF		# True
-Suite18:
+	jmp Suite19
+Vrai19:	push $0xFFFFFFFFFFFFFFFF		# True
+Suite19:
 	pop %rax
 	cmp $0, %rax
-	je Repeat15	# Repeat if condition is false
-EndRepeat15:
+	je Repeat16	# Repeat if condition is false
+EndRepeat16:
 	movsd d(%rip), %xmm0	# Load double variable
 	subq $8, %rsp
 	movsd %xmm0, (%rsp)
@@ -176,23 +200,25 @@ EndRepeat15:
 	push $5
 	pop %rdx
 	mov %rdx, %rbx    # keep limit in callee-saved reg
-	jmp TestFor20
-LoopFor20:
+	jmp TestFor21
+LoopFor21:
 	mov i(%rip), %rax	# Load integer variable
 	push %rax
 	# Affichage de type: UNSIGNED_INT
+	# print integer in %rax
 	pop    %rax                     # integer to print
 	mov    %rax, %rsi               # 2nd arg → RSI
-	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
-	movl   $0, %eax                  # no SSE regs
+	leaq   FormatUInt(%rip), %rdi   # 1st arg → RDI
+	movl   $0, %eax                 # no SSE args
 	call   printf@PLT
+
 	mov i(%rip), %rax    # reload counter
 	add $1, %rax
 	mov %rax, i(%rip)    # store incremented counter
-TestFor20:
+TestFor21:
 	cmp %rbx, %rax    # compare limit (rbx), counter
-	jbe LoopFor20
-EndFor20:
+	jbe LoopFor21
+EndFor21:
 	movsd d(%rip), %xmm0	# Load double variable
 	subq $8, %rsp
 	movsd %xmm0, (%rsp)
@@ -207,57 +233,65 @@ EndFor20:
 	mov x(%rip), %rax	# Load integer variable
 	push %rax
 	# Affichage de type: UNSIGNED_INT
+	# print integer in %rax
 	pop    %rax                     # integer to print
 	mov    %rax, %rsi               # 2nd arg → RSI
-	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
-	movl   $0, %eax                  # no SSE regs
+	leaq   FormatUInt(%rip), %rdi   # 1st arg → RDI
+	movl   $0, %eax                 # no SSE args
 	call   printf@PLT
+
 	#CASE STARTED
 	mov x(%rip), %rax	# Load integer variable
 	push %rax
 	pop %rax		# Pop INTEGER or BOOLEAN into rax
 	cmp $1, %rax	# Compare with case label
-	je CaseMatch28
-	jmp Skip28	# No match, skip this case block
-CaseMatch28:
+	je CaseMatch29
+	jmp Skip29	# No match, skip this case block
+CaseMatch29:
 	push $1
 	# Affichage de type: UNSIGNED_INT
+	# print integer in %rax
 	pop    %rax                     # integer to print
 	mov    %rax, %rsi               # 2nd arg → RSI
-	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
-	movl   $0, %eax                  # no SSE regs
+	leaq   FormatUInt(%rip), %rdi   # 1st arg → RDI
+	movl   $0, %eax                 # no SSE args
 	call   printf@PLT
-	jmp EndCase26
-Skip28:
+
+	jmp EndCase27
+Skip29:
 	cmp $2, %rax	# Compare with case label
-	je CaseMatch30
+	je CaseMatch31
 	cmp $0, %rax	# Compare with case label
-	je CaseMatch30
-	jmp Skip30	# No match, skip this case block
-CaseMatch30:
+	je CaseMatch31
+	jmp Skip31	# No match, skip this case block
+CaseMatch31:
 	push $2
 	# Affichage de type: UNSIGNED_INT
+	# print integer in %rax
 	pop    %rax                     # integer to print
 	mov    %rax, %rsi               # 2nd arg → RSI
-	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
-	movl   $0, %eax                  # no SSE regs
+	leaq   FormatUInt(%rip), %rdi   # 1st arg → RDI
+	movl   $0, %eax                 # no SSE args
 	call   printf@PLT
-	jmp EndCase26
-Skip30:
+
+	jmp EndCase27
+Skip31:
 	cmp $10, %rax	# Compare with case label
-	je CaseMatch32
-	jmp Skip32	# No match, skip this case block
-CaseMatch32:
+	je CaseMatch33
+	jmp Skip33	# No match, skip this case block
+CaseMatch33:
 	push $10
 	# Affichage de type: UNSIGNED_INT
+	# print integer in %rax
 	pop    %rax                     # integer to print
 	mov    %rax, %rsi               # 2nd arg → RSI
-	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
-	movl   $0, %eax                  # no SSE regs
+	leaq   FormatUInt(%rip), %rdi   # 1st arg → RDI
+	movl   $0, %eax                 # no SSE args
 	call   printf@PLT
-	jmp EndCase26
-Skip32:
-EndCase26:
+
+	jmp EndCase27
+Skip33:
+EndCase27:
 	movsd d(%rip), %xmm0	# Load double variable
 	subq $8, %rsp
 	movsd %xmm0, (%rsp)

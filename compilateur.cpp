@@ -989,14 +989,27 @@ void DisplayStatement(void) {
 
     cout << "\t# Affichage de type: " << TypeToString(ExprType) << endl;
 
-    if (ExprType == TYPE_UNSIGNED_INT || ExprType == TYPE_BOOLEAN) {
-        // integer / boolean: printf("%llu\n", rax)
-        cout << "\tpop    %rax                     # integer to print\n";
-        cout << "\tmov    %rax, %rsi               # 2nd arg → RSI\n";
-        cout << "\tleaq   FormatString1(%rip), %rdi# 1st arg → RDI\n";
-        cout << "\tmovl   $0, %eax                  # no SSE regs\n";
-        cout << "\tcall   printf@PLT\n";
-
+	if (ExprType == TYPE_UNSIGNED_INT) {
+		// integer: printf("%llu\n", rax)
+		cout << "\t# print integer in %rax\n";
+		cout << "\tpop    %rax                     # integer to print\n";
+		cout << "\tmov    %rax, %rsi               # 2nd arg → RSI\n";
+		cout << "\tleaq   FormatUInt(%rip), %rdi   # 1st arg → RDI\n";
+		cout << "\tmovl   $0, %eax                 # no SSE args\n";
+		cout << "\tcall   printf@PLT\n\n";
+	}
+	else if (ExprType == TYPE_BOOLEAN) {
+		// boolean: collapse to 0/1 then printf("%llu\n")
+		cout << "\t# print boolean in %rax\n";
+		cout << "\tpop    %rax                     # boolean byte (0x00 or 0xFF)\n";
+		cout << "\ttestb  %al, %al                 # set flags on AL\n";
+		cout << "\tsetne  %al                      # AL=1 if non-zero, else 0\n";
+		cout << "\tmovzbq %al, %rax                # zero-extend AL -> full RAX (0 or 1)\n";
+		cout << "\tmov    %rax, %rsi               # 2nd arg -> RSI\n";
+		cout << "\tleaq   FormatUInt(%rip), %rdi   # 1st arg -> RDI\n";
+		cout << "\tmovl   $0, %eax                 # no SSE args\n";
+		cout << "\tcall   printf@PLT\n\n";
+	
     } else if (ExprType == TYPE_DOUBLE) {
         // double: printf("%f\n", xmm0)
         cout << "\tmovsd  (%rsp), %xmm0            # load double from stack\n";
@@ -1250,13 +1263,15 @@ void Program(void){
 int main(void){	// First version : Source code on standard input and assembly code on standard output
 	// Header for gcc assembler / linker
 	cout << "\t\t\t# This code was produced by the CERI Compiler"<<endl;
+	cout << "\t.section .rodata\n";
+	cout << "FormatUInt: .asciz \"%llu\\n\"\n\n";
 	// Let's proceed to the analysis and code production
 	current=(TOKEN) lexer->yylex();
 	Program();
 	// Trailer for the gcc assembler / linker
 	cout << "\tmovq %rbp, %rsp\t\t# Restore the position of the stack's top"<<endl;
 	cout << "\tret\t\t\t# Return from main function"<<endl;
-	cout << "\t.section .note.GNU-stack,\"\",@progbits" << endl;
+	cout << "\t.section .note.GNU-stack,\"\",@progbits\n";
 	if(current!=FEOF){
 		cerr <<"Caractères en trop à la fin du programme : ["<<current<<"]";
 		Error("."); // unexpected characters at the end of program
