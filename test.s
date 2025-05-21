@@ -29,23 +29,22 @@ main:			# The main function body :
 	mov x(%rip), %rax	# Load integer variable
 	push %rax
 	# Affichage de type: UNSIGNED_INT
-	pop %rdx                     # The value to be displayed
-	movq $FormatString1, %rsi    # '%llu\n'
-	movl $1, %edi
-	movl $0, %eax
-	call __printf_chk@PLT
+	pop    %rax                     # integer to print
+	mov    %rax, %rsi               # 2nd arg → RSI
+	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
+	movl   $0, %eax                  # no SSE regs
+	call   printf@PLT
 	movsd d(%rip), %xmm0	# Load double variable
 	subq $8, %rsp
 	movsd %xmm0, (%rsp)
 	# Affichage de type: DOUBLE
-	movsd	(%rsp), %xmm0		# &stack top -> %xmm0
-	subq	$16, %rsp		# allocation for 3 additional doubles
-	movsd %xmm0, 8(%rsp)
-	movq $FormatString2, %rdi	# "%lf\n"
-	movq	$1, %rax
-	call	printf
-nop
-	addq $24, %rsp			# pop nothing
+	movsd  (%rsp), %xmm0            # load double from stack
+	addq   $8, %rsp                 # pop it
+	subq   $8, %rsp                 # align stack (RSP%16==8)
+	leaq   FormatString2(%rip), %rdi# format string → RDI
+	movl   $1, %eax                  # one SSE-reg in varargs
+	call   printf@PLT
+	addq   $8, %rsp                 # restore stack
 	mov x(%rip), %rax	# Load integer variable
 	push %rax
 	mov y(%rip), %rax	# Load integer variable
@@ -64,21 +63,21 @@ Suite7:
 	mov x(%rip), %rax	# Load integer variable
 	push %rax
 	# Affichage de type: UNSIGNED_INT
-	pop %rdx                     # The value to be displayed
-	movq $FormatString1, %rsi    # '%llu\n'
-	movl $1, %edi
-	movl $0, %eax
-	call __printf_chk@PLT
+	pop    %rax                     # integer to print
+	mov    %rax, %rsi               # 2nd arg → RSI
+	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
+	movl   $0, %eax                  # no SSE regs
+	call   printf@PLT
 	jmp Suite6
 Else6:
 	mov y(%rip), %rax	# Load integer variable
 	push %rax
 	# Affichage de type: UNSIGNED_INT
-	pop %rdx                     # The value to be displayed
-	movq $FormatString1, %rsi    # '%llu\n'
-	movl $1, %edi
-	movl $0, %eax
-	call __printf_chk@PLT
+	pop    %rax                     # integer to print
+	mov    %rax, %rsi               # 2nd arg → RSI
+	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
+	movl   $0, %eax                  # no SSE regs
+	call   printf@PLT
 Suite6:
 While10:
 	mov x(%rip), %rax	# Load integer variable
@@ -98,11 +97,11 @@ Suite11:
 	mov x(%rip), %rax	# Load integer variable
 	push %rax
 	# Affichage de type: UNSIGNED_INT
-	pop %rdx                     # The value to be displayed
-	movq $FormatString1, %rsi    # '%llu\n'
-	movl $1, %edi
-	movl $0, %eax
-	call __printf_chk@PLT
+	pop    %rax                     # integer to print
+	mov    %rax, %rsi               # 2nd arg → RSI
+	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
+	movl   $0, %eax                  # no SSE regs
+	call   printf@PLT
 	mov x(%rip), %rax	# Load integer variable
 	push %rax
 	push $1
@@ -127,11 +126,11 @@ Repeat14:
 	mov y(%rip), %rax	# Load integer variable
 	push %rax
 	# Affichage de type: UNSIGNED_INT
-	pop %rdx                     # The value to be displayed
-	movq $FormatString1, %rsi    # '%llu\n'
-	movl $1, %edi
-	movl $0, %eax
-	call __printf_chk@PLT
+	pop    %rax                     # integer to print
+	mov    %rax, %rsi               # 2nd arg → RSI
+	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
+	movl   $0, %eax                  # no SSE regs
+	call   printf@PLT
 	mov y(%rip), %rax	# Load integer variable
 	push %rax
 	push $0
@@ -158,11 +157,11 @@ LoopFor18:
 	mov i(%rip), %rax	# Load integer variable
 	push %rax
 	# Affichage de type: UNSIGNED_INT
-	pop %rdx                     # The value to be displayed
-	movq $FormatString1, %rsi    # '%llu\n'
-	movl $1, %edi
-	movl $0, %eax
-	call __printf_chk@PLT
+	pop    %rax                     # integer to print
+	mov    %rax, %rsi               # 2nd arg → RSI
+	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
+	movl   $0, %eax                  # no SSE regs
+	call   printf@PLT
 	add $1, %rax
 	mov %rax, i
 TestFor18:
@@ -178,11 +177,11 @@ EndFor18:
 CaseMatch24:
 	push $1
 	# Affichage de type: UNSIGNED_INT
-	pop %rdx                     # The value to be displayed
-	movq $FormatString1, %rsi    # '%llu\n'
-	movl $1, %edi
-	movl $0, %eax
-	call __printf_chk@PLT
+	pop    %rax                     # integer to print
+	mov    %rax, %rsi               # 2nd arg → RSI
+	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
+	movl   $0, %eax                  # no SSE regs
+	call   printf@PLT
 	jmp EndCase22
 Skip24:
 	cmp $2, %rax	# Compare with case label
@@ -193,11 +192,11 @@ Skip24:
 CaseMatch26:
 	push $2
 	# Affichage de type: UNSIGNED_INT
-	pop %rdx                     # The value to be displayed
-	movq $FormatString1, %rsi    # '%llu\n'
-	movl $1, %edi
-	movl $0, %eax
-	call __printf_chk@PLT
+	pop    %rax                     # integer to print
+	mov    %rax, %rsi               # 2nd arg → RSI
+	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
+	movl   $0, %eax                  # no SSE regs
+	call   printf@PLT
 	jmp EndCase22
 Skip26:
 	cmp $10, %rax	# Compare with case label
@@ -206,11 +205,11 @@ Skip26:
 CaseMatch28:
 	push $10
 	# Affichage de type: UNSIGNED_INT
-	pop %rdx                     # The value to be displayed
-	movq $FormatString1, %rsi    # '%llu\n'
-	movl $1, %edi
-	movl $0, %eax
-	call __printf_chk@PLT
+	pop    %rax                     # integer to print
+	mov    %rax, %rsi               # 2nd arg → RSI
+	leaq   FormatString1(%rip), %rdi# 1st arg → RDI
+	movl   $0, %eax                  # no SSE regs
+	call   printf@PLT
 	jmp EndCase22
 Skip28:
 EndCase22:

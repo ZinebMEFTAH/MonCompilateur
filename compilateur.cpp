@@ -980,39 +980,42 @@ TYPE CaseLabelList(TYPE TypeExpression, int labelTarget){
 }
 
 void DisplayStatement(void) {
-	current = (TOKEN) lexer->yylex(); 
-	TYPE ExprType = Expression();
+    current = (TOKEN)lexer->yylex();
+    TYPE ExprType = Expression();
 
-	cout << "\t# Affichage de type: " << TypeToString(ExprType) << endl;
+    cout << "\t# Affichage de type: " << TypeToString(ExprType) << endl;
 
-	if (ExprType == TYPE_UNSIGNED_INT || ExprType == TYPE_BOOLEAN) {
-		cout << "\tpop %rdx                     # The value to be displayed" << endl;
-		cout << "\tmovq $FormatString1, %rsi    # '%llu\\n'" << endl;
-		cout << "\tmovl $1, %edi" << endl;
-		cout << "\tmovl $0, %eax" << endl;
-		cout << "\tcall __printf_chk@PLT" << endl;
+    if (ExprType == TYPE_UNSIGNED_INT || ExprType == TYPE_BOOLEAN) {
+        // integer / boolean: printf("%llu\n", rax)
+        cout << "\tpop    %rax                     # integer to print\n";
+        cout << "\tmov    %rax, %rsi               # 2nd arg → RSI\n";
+        cout << "\tleaq   FormatString1(%rip), %rdi# 1st arg → RDI\n";
+        cout << "\tmovl   $0, %eax                  # no SSE regs\n";
+        cout << "\tcall   printf@PLT\n";
 
-	} else if (ExprType == TYPE_DOUBLE) {
-			cout << "\tmovsd	(%rsp), %xmm0\t\t# &stack top -> %xmm0"<<endl;
-			cout << "\tsubq	$16, %rsp\t\t# allocation for 3 additional doubles"<<endl;
-			cout << "\tmovsd %xmm0, 8(%rsp)"<<endl;
-			cout << "\tmovq $FormatString2, %rdi\t# \"%lf\\n\""<<endl;
-			cout << "\tmovq	$1, %rax"<<endl;
-			cout << "\tcall	printf"<<endl;
-			cout << "nop"<<endl;
-			cout << "\taddq $24, %rsp\t\t\t# pop nothing"<<endl;
+    } else if (ExprType == TYPE_DOUBLE) {
+        // double: printf("%f\n", xmm0)
+        cout << "\tmovsd  (%rsp), %xmm0            # load double from stack\n";
+        cout << "\taddq   $8, %rsp                 # pop it\n";
+        cout << "\tsubq   $8, %rsp                 # align stack (RSP%16==8)\n";
+        cout << "\tleaq   FormatString2(%rip), %rdi# format string → RDI\n";
+        cout << "\tmovl   $1, %eax                  # one SSE-reg in varargs\n";
+        cout << "\tcall   printf@PLT\n";
+        cout << "\taddq   $8, %rsp                 # restore stack\n";
 
-	} else if (ExprType == TYPE_CHAR) {
-		cout << "\tmovsd d(%rip), %xmm0          # Load the double value directly into xmm0" << endl;
-		cout << "\tmovq $FormatString3, %rsi    # '%f\\n'" << endl;
-		cout << "\tmovl $1, %edi" << endl;
-		cout << "\tmovl $0, %eax" << endl;
-		cout << "\tcall __printf_chk@PLT" << endl;
+    } else if (ExprType == TYPE_CHAR) {
+        // char: printf("%c\n", al)
+        cout << "\tpop    %rax                     # char in AL\n";
+        cout << "\tmovb   %al, %sil                # 2nd arg (char) → SIL\n";
+        cout << "\tleaq   FormatString3(%rip), %rdi# format → RDI\n";
+        cout << "\tmovl   $0, %eax                  # no SSE regs\n";
+        cout << "\tcall   printf@PLT\n";
 
-	} else {
-		Error("DISPLAY ne supporte que les types INTEGER, DOUBLE et CHAR.");
-	}
+    } else {
+        Error("DISPLAY ne supporte que les types INTEGER, DOUBLE et CHAR.");
+    }
 }
+
 
 
 
