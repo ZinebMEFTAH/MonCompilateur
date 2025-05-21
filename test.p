@@ -26,7 +26,7 @@ BEGIN
   REPEAT
     y := y - 1;
     DISPLAY y;
-  UNTIL y = 0;
+  UNTIL y == 0;
 
   FOR i := 0 TO 5 DO
     DISPLAY i;
@@ -39,7 +39,5 @@ BEGIN
 
   flag := TRUE;
   ch := 'A';
-
-  x := Add(3, 4);
-
+  
 END.

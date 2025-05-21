@@ -26,6 +26,8 @@
 #include "tokeniser.h"
 #include <cstring>
 #include <map>
+#include <map>
+#include <cstdint>  
 
 
 using namespace std;
@@ -158,6 +160,8 @@ TYPE Identifier(void) {
 			cout << "\tmovsd " << name << "(%rip), %xmm0\t# Load double variable" << endl;
 			cout << "\tsubq $8, %rsp" << endl;
 			cout << "\tmovsd %xmm0, (%rsp)" << endl;
+
+
 			break;
 
 		default:
@@ -170,13 +174,30 @@ TYPE Identifier(void) {
 
 TYPE Number(void) {
 	string txt = lexer->YYText();
-	cout << "\tpush $" << txt << "\t# push constant" << endl;
-	current = (TOKEN) lexer->yylex();
-	if (txt.find('.') != string::npos)
+	double d;					// 64-bit float
+	unsigned int *i;			// pointer to a 32 bit unsigned int 
+
+	if (txt.find('.') != string::npos) {
+		// FLOAT constant handling
+		d=atof(lexer->YYText());
+		i=(unsigned int *) &d; // i points to the const double
+		//cout <<"\tpush $"<<*i<<"\t# Conversion of "<<d<<endl;
+		// Is equivalent to : 
+		cout <<"\tsubq $8,%rsp\t\t\t# allocate 8 bytes on stack's top"<<endl;
+		cout <<"\tmovl	$"<<*i<<", (%rsp)\t# Conversion of "<<d<<" (32 bit high part)"<<endl;
+		cout <<"\tmovl	$"<<*(i+1)<<", 4(%rsp)\t# Conversion of "<<d<<" (32 bit low part)"<<endl;
+
+		current = (TOKEN) lexer->yylex();
 		return TYPE_DOUBLE;
-	else
+	} else {
+		// INTEGER constant handling
+		cout <<"\tpush $"<<atoi(lexer->YYText())<<endl;
+		current = (TOKEN) lexer->yylex();
 		return TYPE_UNSIGNED_INT;
+	}
 }
+
+
 
 TYPE CharConst(void) {
 	char c = lexer->YYText()[1];  // lexer->YYText() is like: `'a'`
@@ -190,7 +211,7 @@ TYPE CharConst(void) {
 TYPE Expression(void);			// Called by Term() and calls Term()
 void VarDeclaration(void);
 void StructuredStatement(void);
-void CaseListElement(TYPE);
+void CaseListElement(TYPE, int);
 TYPE CaseLabelList(TYPE, int);
 
 TYPE Factor(void) {
@@ -694,14 +715,14 @@ void IfStatement(void){
 	cout << "\tje Else" << ifTag << "\t# If condition is false, jump to Else" << endl;
 
 	current = (TOKEN) lexer->yylex();
-	Statement();
+	StructuredStatement();
 
 	cout << "\tjmp Suite" << ifTag << endl;
 
 	cout << "Else" << ifTag << ":" << endl;
 	if (current == ELSE) {
 		current = (TOKEN) lexer->yylex();
-		Statement();
+		StructuredStatement();
 	}
 	cout << "Suite" << ifTag << ":" << endl;
 }
@@ -749,11 +770,16 @@ void RepeatStatement(void){
 	current = (TOKEN) lexer->yylex(); // read after 'REPEAT'
 
 	// Parse at least one statement
-	Statement();
-	while (current == SEMICOLON) {
+	StructuredStatement();
+	while(current == SEMICOLON){
 		current = (TOKEN) lexer->yylex();
-		Statement();
+
+		// Ne pas exécuter StructuredStatement() si on atteint END après ;
+		if (current == UNTIL) break;
+
+		StructuredStatement();
 	}
+
 
 	// Check for UNTIL
 	if (current != UNTIL)
@@ -812,7 +838,7 @@ void ForStatement(void){
 
 	// Loop body
 	cout << "LoopFor" << forTag << ":" << endl;
-	Statement();  // loop body
+	StructuredStatement();  // loop body
 
 	// Increment
 	cout << "\tadd $" << step << ", %rax" << endl;
@@ -830,16 +856,21 @@ void ForStatement(void){
 // BlockStatement := "BEGIN" Statement { ";" Statement } "END"
 void CompoundStatement(void){
 	current = (TOKEN) lexer->yylex(); 
-	Statement();
+	StructuredStatement();
 
 	while(current == SEMICOLON){
 		current = (TOKEN) lexer->yylex();
-		Statement();
+
+		// Ne pas exécuter StructuredStatement() si on atteint END après ;
+		if (current == END) break;
+
+		StructuredStatement();
 	}
 
-	if (current != END)
-		Error("Expected 'END'");
 
+	if (current != END){
+	cerr << "[DEBUG] current token = '" << lexer->YYText() << "' (" << current << ")" << endl;		Error("Expected 'END'");
+	}
 	current = (TOKEN) lexer->yylex();
 }
 
@@ -853,7 +884,7 @@ void CaseStatement(void){
 	if (TypeExpression != TYPE_CHAR && TypeExpression != TYPE_UNSIGNED_INT && TypeExpression != TYPE_DOUBLE)
 		TypeError("Expression invalide dans la Case : type autorisé CHAR, INTEGER ou DOUBLE");
 
-	current = (TOKEN) lexer->yylex(); // read OF
+	//current = (TOKEN) lexer->yylex(); // read OF
 	if (current != OF)
 		Error("Expected 'OF' for the case statement!");
 
@@ -870,11 +901,13 @@ void CaseStatement(void){
 		cout << "\tpop %rax\t\t# Pop INTEGER or BOOLEAN into rax" << endl;
 	}
 
-	CaseListElement(TypeExpression);
+	CaseListElement(TypeExpression, CaseTag);
+
 
 	while (current == SEMICOLON) {
 		current = (TOKEN) lexer->yylex();
-		CaseListElement(TypeExpression);
+		if (current == END) break;
+		CaseListElement(TypeExpression, CaseTag);
 	}
 
 	if (current != END)
@@ -886,7 +919,7 @@ void CaseStatement(void){
 	current = (TOKEN) lexer->yylex(); // read after 'END'
 }
 
-void CaseListElement(TYPE TypeExpression){
+void CaseListElement(TYPE TypeExpression, int caseEndLabel){
 	int caseLabel = ++TagNumber;
 
 	CaseLabelList(TypeExpression, caseLabel);
@@ -898,8 +931,8 @@ void CaseListElement(TYPE TypeExpression){
 	cout << "CaseMatch" << caseLabel << ":" << endl;
 
 	if (current != SEMICOLON) {
-		Statement();
-		cout << "\tjmp EndCase" << caseLabel << endl;
+		StructuredStatement();
+		cout << "\tjmp EndCase" << caseEndLabel << endl;
 	}
 
 	cout << "Skip" << caseLabel << ":" << endl;
@@ -946,30 +979,42 @@ TYPE CaseLabelList(TYPE TypeExpression, int labelTarget){
 	return TypeConstant;
 }
 
-void DisplayStatement(void){
+void DisplayStatement(void) {
 	current = (TOKEN) lexer->yylex(); 
 	TYPE ExprType = Expression();
+
+	cout << "\t# Affichage de type: " << TypeToString(ExprType) << endl;
 
 	if (ExprType == TYPE_UNSIGNED_INT || ExprType == TYPE_BOOLEAN) {
 		cout << "\tpop %rdx                     # The value to be displayed" << endl;
 		cout << "\tmovq $FormatString1, %rsi    # '%llu\\n'" << endl;
+		cout << "\tmovl $1, %edi" << endl;
+		cout << "\tmovl $0, %eax" << endl;
+		cout << "\tcall __printf_chk@PLT" << endl;
+
 	} else if (ExprType == TYPE_DOUBLE) {
-		cout << "\tmovsd (%rsp), %xmm0          # Load double into xmm0" << endl;
-		cout << "\taddq $8, %rsp                # Pop stack" << endl;
-		cout << "\tmovq $FormatString2, %rsi    # '%f\\n'" << endl;
+			cout << "\tmovsd	(%rsp), %xmm0\t\t# &stack top -> %xmm0"<<endl;
+			cout << "\tsubq	$16, %rsp\t\t# allocation for 3 additional doubles"<<endl;
+			cout << "\tmovsd %xmm0, 8(%rsp)"<<endl;
+			cout << "\tmovq $FormatString2, %rdi\t# \"%lf\\n\""<<endl;
+			cout << "\tmovq	$1, %rax"<<endl;
+			cout << "\tcall	printf"<<endl;
+			cout << "nop"<<endl;
+			cout << "\taddq $24, %rsp\t\t\t# pop nothing"<<endl;
+
 	} else if (ExprType == TYPE_CHAR) {
-		cout << "\tpop %rdx                     # The value to be displayed" << endl;
-		cout << "\tmovq $FormatString3, %rsi    # '%c\\n'" << endl;
+		cout << "\tmovsd d(%rip), %xmm0          # Load the double value directly into xmm0" << endl;
+		cout << "\tmovq $FormatString3, %rsi    # '%f\\n'" << endl;
+		cout << "\tmovl $1, %edi" << endl;
+		cout << "\tmovl $0, %eax" << endl;
+		cout << "\tcall __printf_chk@PLT" << endl;
+
 	} else {
 		Error("DISPLAY ne supporte que les types INTEGER, DOUBLE et CHAR.");
 	}
-
-	cout << "\tmovl $1, %edi" << endl;
-	cout << "\tmovl $0, %eax" << endl;
-	cout << "\tcall __printf_chk@PLT" << endl;
-
-	current = (TOKEN) lexer->yylex(); 
 }
+
+
 
 // <conditional statement> ::= <if statement> | <case statement>
 void ConditionalStatement(void){
@@ -1007,16 +1052,23 @@ void StructuredStatement(void){
 	if (current == BEGIN0)
 	{
 		CompoundStatement();
+	} else if (current == ID)
+	{
+		AssignementStatement();
 	} else if ((current == IF) || (current == CASE) )
 	{
 		ConditionalStatement();
-	} else if (current == REPEAT)
+	} else if ((current == REPEAT) || (current == WHILE)|| (current == FOR))
 	{
 		RepetitiveStatement();
 	} else if (current == WITH)
 	{
-		WithStatement();
-	} else {
+	 	WithStatement();
+	} else if (current == DISPLAY)
+	{
+		DisplayStatement();
+	}  else {
+		cerr << "[DEBUG] current token = " << current << endl;
 		Error("A weird input!");
 	}
 
@@ -1197,6 +1249,7 @@ int main(void){	// First version : Source code on standard input and assembly co
 	// Trailer for the gcc assembler / linker
 	cout << "\tmovq %rbp, %rsp\t\t# Restore the position of the stack's top"<<endl;
 	cout << "\tret\t\t\t# Return from main function"<<endl;
+	cout << "\t.section .note.GNU-stack,\"\",@progbits" << endl;
 	if(current!=FEOF){
 		cerr <<"Caractères en trop à la fin du programme : ["<<current<<"]";
 		Error("."); // unexpected characters at the end of program

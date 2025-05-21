@@ -70,7 +70,7 @@ unknown [^\"A-Za-z0-9 \n\r\t\(\)\<\>\=\!\%\&\|\}\-\;\.]+
 "begin"	return BEGIN0;
 "true"  return TRUE0;
 "false" return FALSE0;
-"DIPLAY" return DIPLAY;
+"DISPLAY" return DISPLAY;
 "var"    return VAR;
 "BOOLEAN" return BOOLEAN;
 "INTEGER" return INTEGER;
