@@ -77,20 +77,24 @@ unknown [^\"A-Za-z0-9 \n\r\t\(\)\<\>\=\!\%\&\|\}\-\;\.]+
 "DOUBLE"  return DOUBLE;
 "CHAR" return CHAR;
 {id}		return ID;
+\{[^}]*\}               ;        // Pascal-style comments
+\/\/[^\n]*              ;        // C++-style comments
+[ \t\r\n]+              ;        // Skip whitespace
+
+"(*"    { // Pascal-style block comments
+    int c;
+    while((c = yyinput()) != 0){
+        if(c == '*'){
+            if((c = yyinput()) == ')')
+                break;
+            else
+                unput(c);
+        }	
+    }
+};
+
 
 <<EOF>>		return FEOF;
-{ws}    {/* skip blanks and tabs */};
-"(*"    { /* Skip comments between '(*' and '*)' */
-		int c;
-		while((c = yyinput()) != 0){
-     			if(c == '*'){
-     	    			if((c = yyinput()) == ')')
-    	        			break;
-    	     			else
-  	          			unput(c);
-  	   		}	
-		}
-	};
 
 {unknown}	return UNKNOWN;
 

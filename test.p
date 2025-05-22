@@ -1,53 +1,21 @@
 VAR
-  x, y, i: INTEGER;
-  ch: CHAR;
-  flag: BOOLEAN;
-  d: DOUBLE.
+  a, b, c, i, j, counter, result: INTEGER;
+  d1, d2, d3, dTotal: DOUBLE;
+  flag, cond, success: BOOLEAN;
+  letter: CHAR.
 
 BEGIN
-  x := 10;
-  y := 5;
-  d := 2.5;
-  ch := 'a';
+  a := 3;
+  b := 2;
+  c := 1;
 
-  flag := true;
-
-  DISPLAY flag;
-  DISPLAY d;
-
-  IF x > y THEN
-    DISPLAY x
-  ELSE
-    DISPLAY y;
-
-  WHILE x > 0 DO
-    BEGIN
-      DISPLAY x;
-      x := x - 1;
-    END;
-
-  DISPLAY d;
-
-  REPEAT
-    y := y - 1;
-    DISPLAY y;
-  UNTIL y == 0;
-
-  DISPLAY d;
+  d1 := 2.0;
+  d2 := 1.5;
 
 
-  FOR i := 0 TO 5 DO
-    DISPLAY i;
+  d3 := (a + 1) * ((d1 + a) * ((a - c) + b));  // → 2.0 + 1.5 * 4 = 2.0 + 6.0 = 8.0
+  DISPLAY d3;
 
-  DISPLAY d;
-  DISPLAY x;
 
-  CASE x OF
-    1: DISPLAY 1;
-    2, 0: DISPLAY 2;
-    10: DISPLAY 10;
-  END;
 
-  DISPLAY d;
-  
 END.

@@ -104,6 +104,38 @@ TYPE CheckBinaryOperationTypes(TYPE t1, TYPE t2, string op) {
 	return TYPE_UNDEFINED; // not reached
 }
 
+// Promote integer to double if needed
+// - `type`: type of the operand (should be TYPE_UNSIGNED_INT or TYPE_DOUBLE)
+// - `position`: 1 for top of stack (type2), 2 for second value (type1)
+// Returns the new promoted type.
+TYPE PromoteToDoubleIfNeeded(TYPE type, int position) {
+	if (type != TYPE_UNSIGNED_INT) return type;
+
+	cout << "\t# Promote ";
+	if (position == 1)
+		cout << "type2 (top of stack)";
+	else
+		cout << "type1 (second on stack)";
+	cout << " to double\n";
+
+	if (position == 1) {
+		// Promote type2 (top of stack)
+		cout << "\tpop %rax\n";
+		cout << "\tcvtsi2sd %rax, %xmm0\n";
+		cout << "\tsubq $8, %rsp\n";
+		cout << "\tmovsd %xmm0, (%rsp)\n";
+	} else if (position == 2) {
+		// We must pop both, promote second (type1), then re-push top (type2)
+		cout << "\tpop %rax\t\t# type2 (already promoted)\n";
+		cout << "\tpop %rbx\t\t# type1 to be promoted\n";
+		cout << "\tcvtsi2sd %rbx, %xmm1\n";
+		cout << "\tsubq $8, %rsp\n";
+		cout << "\tmovsd %xmm1, (%rsp)\n";
+		cout << "\tsubq $8, %rsp\n";
+		cout << "\tmovsd %xmm0, (%rsp)\t# re-push type2\n";
+	}
+	return TYPE_DOUBLE;
+}
 
 // Program := [DeclarationPart] StatementPart
 // VarDeclarationPart := "VAR" VarDeclaration {";" VarDeclaration} "."
@@ -116,7 +148,7 @@ TYPE CheckBinaryOperationTypes(TYPE t1, TYPE t2, string op) {
 // IfStatement := "IF" Expression "THEN" Statement [ "ELSE" Statement ]
 // WhileStatement := "WHILE" Expression "DO" Statement
 // ForStatement := "FOR" AssignementStatement "To" Expression "DO" Statement
-// CaseStatement := case <expression> of <case list element> {; <case list element> } [ ELSE StatementSequence ] end
+// CaseStatement := case <expression> of <case list element> {; <case list element> } end
 // CaseListElement := <case label list> : <statement> | <empty>
 // CaseLabelList := <constant> {, <constant> }
 // CompoundStatement := "BEGIN" Statement { ";" Statement } "END"
@@ -236,6 +268,18 @@ TYPE Factor(void) {
 	else if (current == CHARCONST) {
 		return CharConst();
 	}
+	else if (current == TRUE0)
+	{
+
+		cout << "\tpush $0xFFFFFFFFFFFFFFFF\t\t# True"<<endl;	
+		current = (TOKEN) lexer->yylex();  // Advance to next token
+		return TYPE_BOOLEAN;
+	} else if (current == FALSE0)
+	{
+		cout << "\tpush $0\t\t# False"<<endl;
+		current = (TOKEN) lexer->yylex();  // Advance to next token
+		return TYPE_BOOLEAN;
+	}
 	else if (current == ID) {
 		return Identifier();
 	} else if (current == NOT) {
@@ -272,6 +316,7 @@ OPMUL MultiplicativeOperator(void){
 }
 
 // Term := Factor {MultiplicativeOperator Factor}
+// Term := Factor {MultiplicativeOperator Factor}
 TYPE Term(void){
 	OPMUL mulop;
 	TYPE type1 = Factor();
@@ -291,14 +336,20 @@ TYPE Term(void){
 
 		TYPE commonType = CheckBinaryOperationTypes(type1, type2, op);
 
+		
 		if (commonType == TYPE_DOUBLE)
 		{
-			cout << "\tfldl (%rsp)           # Load top of general stack (b) into %st(0)" << endl;
-			cout << "\taddq $8, %rsp         # Pop b" << endl;
-			cout << "\tfldl (%rsp)           # Load next (a) into %st(0), b is now in %st(1)" << endl;
-			cout << "\taddq $8, %rsp         # Pop a" << endl;
+			// Promote type2 (top of stack)
+			type2 = PromoteToDoubleIfNeeded(type2, 1);
+			type1 = PromoteToDoubleIfNeeded(type1, 2);
 
-			switch(mulop){
+			// Now both operands on stack as double
+			cout << "\tfldl (%rsp)           # Load type2 → st(0)" << endl;
+			cout << "\taddq $8, %rsp" << endl;
+			cout << "\tfldl (%rsp)           # Load type1 → st(0), type2 → st(1)" << endl;
+			cout << "\taddq $8, %rsp" << endl;
+
+			switch (mulop) {
 				case MUL:
 					cout << "\tfmulp %st, %st(1)       # DOUBLE MUL" << endl;
 					break;
@@ -309,32 +360,30 @@ TYPE Term(void){
 					Error("opérateur multiplicatif attendu");
 			}
 
-			cout << "\tsubq $8, %rsp         # Make space on general stack" << endl;
-			cout << "\tfstpl (%rsp)          # Store result back to general stack" << endl;
+			cout << "\tsubq $8, %rsp         # Make space" << endl;
+			cout << "\tfstpl (%rsp)          # Store result" << endl;
 
 			type1 = commonType;
-		} else {
+		}
+
+		
+		
+		else {
 			cout << "\tpop %rbx" << endl;
 			cout << "\tpop %rax" << endl;
 
 			switch(mulop){
 				case AND:
-					cout << "\tmulq %rbx" << endl;
-					cout << "\tpush %rax\t# AND" << endl;
+					cout << "\tmulq %rbx\n\tpush %rax\t# AND" << endl;
 					break;
 				case MUL:
-					cout << "\tmulq %rbx" << endl;
-					cout << "\tpush %rax\t# MUL" << endl;
+					cout << "\tmulq %rbx\n\tpush %rax\t# MUL" << endl;
 					break;
 				case DIV:
-					cout << "\tmovq $0, %rdx" << endl;
-					cout << "\tdiv %rbx" << endl;
-					cout << "\tpush %rax\t# DIV" << endl;
+					cout << "\tmovq $0, %rdx\n\tdiv %rbx\n\tpush %rax\t# DIV" << endl;
 					break;
 				case MOD:
-					cout << "\tmovq $0, %rdx" << endl;
-					cout << "\tdiv %rbx" << endl;
-					cout << "\tpush %rdx\t# MOD" << endl;
+					cout << "\tmovq $0, %rdx\n\tdiv %rbx\n\tpush %rdx\t# MOD" << endl;
 					break;
 				default:
 					Error("opérateur multiplicatif attendu");
@@ -363,14 +412,13 @@ OPADD AdditiveOperator(void){
 }
 
 // SimpleExpression := Term {AdditiveOperator Term}
-// SimpleExpression := Term {AdditiveOperator Term}
 TYPE SimpleExpression(void){
 	OPADD adop;
 	TYPE type1 = Term();
 
-	while(current==ADDOP){
-		adop = AdditiveOperator();		// Save operator in local variable
-		TYPE type2 = Term();			// Get next term
+	while(current == ADDOP){
+		adop = AdditiveOperator();		
+		TYPE type2 = Term();			
 
 		string op;
 		switch(adop) {
@@ -384,45 +432,49 @@ TYPE SimpleExpression(void){
 
 		if (commonType == TYPE_DOUBLE)
 		{
-			cout << "\tfldl (%rsp)           # Load top of general stack (b) into %st(0)" << endl;
-			cout << "\taddq $8, %rsp         # Pop b" << endl;
-			cout << "\tfldl (%rsp)           # Load next (a) into %st(0), b is now in %st(1)" << endl;
-			cout << "\taddq $8, %rsp         # Pop a" << endl;
+			// Promote operands if needed (convert int → double)
+			type2 = PromoteToDoubleIfNeeded(type2, 1);
+			type1 = PromoteToDoubleIfNeeded(type1, 2);
+
+			cout << "\tfldl (%rsp)           # Load type2 → st(0)" << endl;
+			cout << "\taddq $8, %rsp" << endl;
+			cout << "\tfldl (%rsp)           # Load type1 → st(0), type2 → st(1)" << endl;
+			cout << "\taddq $8, %rsp" << endl;
 
 			switch(adop){
 				case ADD:
-					cout << "\tfaddp %st, %st(1)       # DOUBLE ADD" << endl;
+					cout << "\tfaddp %st, %st(1)\n";
 					break;
 				case SUB:
-					cout << "\tfsubp %st, %st(1)       # DOUBLE SUB" << endl;
+					cout << "\tfsubp %st, %st(1)\n";
 					break;
 				default:
 					Error("opérateur additif attendu");
 			}
 
-			cout << "\tsubq $8, %rsp         # Make space on general stack" << endl;
-			cout << "\tfstpl (%rsp)          # Store result back to general stack" << endl;
+			cout << "\tsubq $8, %rsp         # Make space\n";
+			cout << "\tfstpl (%rsp)          # Store result\n";
 
 			type1 = commonType;
 		} else {
-			cout << "\tpop %rbx" << endl;
-			cout << "\tpop %rax" << endl;
+			cout << "\tpop %rbx\n";
+			cout << "\tpop %rax\n";
 
 			switch(adop){
 				case OR:
-					cout << "\torq %rbx, %rax\t# OR" << endl;
+					cout << "\torq %rbx, %rax\n";
 					break;
 				case ADD:
-					cout << "\taddq %rbx, %rax\t# ADD" << endl;
+					cout << "\taddq %rbx, %rax\n";
 					break;
 				case SUB:
-					cout << "\tsubq %rbx, %rax\t# SUB" << endl;
+					cout << "\tsubq %rbx, %rax\n";
 					break;
 				default:
 					Error("opérateur additif inconnu");
 			}
 
-			cout << "\tpush %rax" << endl;
+			cout << "\tpush %rax\n";
 			type1 = commonType;
 		}
 	}
@@ -554,6 +606,7 @@ OPREL RelationalOperator(void){
 
 // Expression := SimpleExpression [RelationalOperator SimpleExpression]
 TYPE Expression(void){
+	
 	OPREL oprel;
 	if (current == TRUE0)
 	{
@@ -593,7 +646,7 @@ TYPE Expression(void){
 			cout << "\taddq $8, %rsp" << endl;
 			cout << "\tfldl (%rsp)       # a in st(0), b in st(1)" << endl;
 			cout << "\taddq $8, %rsp" << endl;
-			cout << "\tfucomip %st(0), %st(1)" << endl;
+			cout << "\tfucomip %st(1), %st" << endl;
 			cout << "\tfstp %st(0)" << endl;
 		} else {
 			cout << "\tpop %rax" << endl;
@@ -608,17 +661,17 @@ TYPE Expression(void){
 			case DIFF:
 				cout << "\tjne Vrai" << tag << "\t# If different" << endl;
 				break;
-			case SUPE:
-				cout << "\tjae Vrai" << tag << "\t# If above or equal" << endl;
+				case SUPE:
+				cout << "\tjge Vrai" << tag << "\t# If greater or equal (signed)" << endl;
 				break;
 			case INFE:
-				cout << "\tjbe Vrai" << tag << "\t# If below or equal" << endl;
+				cout << "\tjle Vrai" << tag << "\t# If less or equal (signed)" << endl;
 				break;
 			case INF:
-				cout << "\tjb Vrai" << tag << "\t# If below" << endl;
+				cout << "\tjl Vrai" << tag << "\t# If less than (signed)" << endl;
 				break;
 			case SUP:
-				cout << "\tja Vrai" << tag << "\t# If above" << endl;
+				cout << "\tjg Vrai" << tag << "\t# If greater than (signed)" << endl;
 				break;
 			default:
 				Error("Opérateur de comparaison inconnu");
@@ -1033,9 +1086,6 @@ void DisplayStatement(void) {
     }
 }
 
-
-
-
 // <conditional statement> ::= <if statement> | <case statement>
 void ConditionalStatement(void){
 	if (current == IF)
@@ -1122,8 +1172,6 @@ void Statement(void){
 		Error("A weird input!");
 	}
 }
-
-
 
 // StatementPart := Statement {";" Statement} "."
 void StatementPart(void){
