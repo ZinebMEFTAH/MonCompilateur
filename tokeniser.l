@@ -67,6 +67,7 @@ unknown [^\"A-Za-z0-9 \n\r\t\(\)\<\>\=\!\%\&\|\}\-\;\.]+
 "case"	return CASE;
 "of"	return OF;
 "function" return FUNCTION;
+"procedure"	return PROCEDURE;
 "begin"	return BEGIN0;
 "true"  return TRUE0;
 "false" return FALSE0;
@@ -76,6 +77,7 @@ unknown [^\"A-Za-z0-9 \n\r\t\(\)\<\>\=\!\%\&\|\}\-\;\.]+
 "INTEGER" return INTEGER;
 "DOUBLE"  return DOUBLE;
 "CHAR" return CHAR;
+"STRING" return STRING;
 {id}		return ID;
 \{[^}]*\}               ;        // Pascal-style comments
 \/\/[^\n]*              ;        // C++-style comments

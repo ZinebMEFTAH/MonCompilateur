@@ -28,7 +28,8 @@
 #include <map>
 #include <map>
 #include <cstdint>  
-
+#include <stdlib.h>
+#include <string.h>
 
 using namespace std;
 
@@ -45,14 +46,17 @@ FlexLexer* lexer = new yyFlexLexer; // This is the flex tokeniser
 // and lexer->YYText() returns the lexicon entry as a string
 
 	
-enum TYPE { TYPE_UNDEFINED, TYPE_UNSIGNED_INT, TYPE_BOOLEAN, TYPE_CHAR, TYPE_DOUBLE };
+enum TYPE { TYPE_UNDEFINED, TYPE_UNSIGNED_INT, TYPE_BOOLEAN, TYPE_CHAR, TYPE_DOUBLE, TYPE_STRING};
 map<string, TYPE> VariablesWithTypes;
 unsigned long TagNumber=0;
+
+int stringCounter = 0; // global label counter
+map<string, string> stringLiterals; // global storage for unique labels
+
 
 bool IsDeclared(const char *id){
 	return VariablesWithTypes.count(id);
 }
-
 
 void Error(string s){
 	cerr << "Ligne n°"<<lexer->lineno()<<", lu : '"<<lexer->YYText()<<"'("<<current<<"), mais ";
@@ -137,6 +141,15 @@ TYPE PromoteToDoubleIfNeeded(TYPE type, int position) {
 	return TYPE_DOUBLE;
 }
 
+char* __concatStrings(const char* s1, const char* s2) {
+    size_t len1 = strlen(s1), len2 = strlen(s2);
+    char* result = malloc(len1 + len2 + 1);
+    if (!result) return NULL;
+    strcpy(result, s1);
+    strcat(result, s2);
+    return result;
+}
+
 // Program := [DeclarationPart] StatementPart
 // VarDeclarationPart := "VAR" VarDeclaration {";" VarDeclaration} "."
 // VarDeclaration := Ident {"," Ident} ":" Type
@@ -152,7 +165,7 @@ TYPE PromoteToDoubleIfNeeded(TYPE type, int position) {
 // CaseListElement := <case label list> : <statement> | <empty>
 // CaseLabelList := <constant> {, <constant> }
 // CompoundStatement := "BEGIN" Statement { ";" Statement } "END"
-// AssignementStatement := Letter ":=" Expression
+// AssignementStatement := Identifier ":=" Expression
 // DisplayStatement := "DISPLAY" Expression
 // FunctionDeclaration ::= <function heading> <block>
 // FunctionHeading ::= function <identifier> : <result type> ; | function <identifier> ( <formal parameter section> {;<formal parameter section>} ) : <result type> ;
@@ -163,7 +176,7 @@ TYPE PromoteToDoubleIfNeeded(TYPE type, int position) {
 // Expression := SimpleExpression [RelationalOperator SimpleExpression]
 // SimpleExpression := Term {AdditiveOperator Term}
 // Term := Factor {MultiplicativeOperator Factor}
-// Factor := Number | Letter | ID | "(" Expression ")"| "!" Factor
+// Factor := Number | String | Letter | ID | "(" Expression ")"| "!" Factor
 // Number := Digit{Digit}
 
 // AdditiveOperator := "+" | "-" | "||"
@@ -229,8 +242,6 @@ TYPE Number(void) {
 	}
 }
 
-
-
 TYPE CharConst(void) {
 	char c = lexer->YYText()[1];  // lexer->YYText() is like: `'a'`
 	cout << "\tmovq $0, %rax" << endl;
@@ -240,11 +251,38 @@ TYPE CharConst(void) {
 	return TYPE_CHAR;
 }
 
+TYPE StringConst() {
+    string raw = lexer->YYText();  // e.g., "\"hello world\""
+    
+    // Remove the surrounding double quotes
+    string content = raw.substr(1, raw.size() - 2);
+
+    // Create a unique label
+    string label = "StrConst" + to_string(stringCounter++);
+    stringLiterals[label] = content;
+
+    // Emit the code to push the address of the string constant
+    cout << "\tleaq " << label << "(%rip), %rax\t# Load address of string literal\n";
+    cout << "\tpush %rax\t# Push string address\n";
+
+    current = (TOKEN) lexer->yylex();  // Advance
+    return TYPE_STRING;
+}
+
+void DumpStringLiterals() {
+    cout << "\n.section .rodata\n";
+    for (const auto& [label, value] : stringLiterals) {
+        cout << label << ":\n";
+        cout << "\t.string \"" << value << "\"\n";
+    }
+}
+
 TYPE Expression(void);			// Called by Term() and calls Term()
 void VarDeclaration(void);
 void StructuredStatement(void);
 void CaseListElement(TYPE, int);
 TYPE CaseLabelList(TYPE, int);
+void Statement(void);
 
 TYPE Factor(void) {
 	if (current == LPARENT) {
@@ -267,7 +305,11 @@ TYPE Factor(void) {
 	}
 	else if (current == CHARCONST) {
 		return CharConst();
-	}
+	} 
+	else if (current == STRINGCONST)
+	{
+		return StringConst();
+	} 
 	else if (current == TRUE0)
 	{
 
@@ -430,7 +472,20 @@ TYPE SimpleExpression(void){
 
 		TYPE commonType = CheckBinaryOperationTypes(type1, type2, op);
 
-		if (commonType == TYPE_DOUBLE)
+		if (type1 == TYPE_STRING && type2 == TYPE_STRING && adop == ADD) {
+			cout << "\t# String concatenation: concatenate type1 + type2" << endl;
+
+			cout << "\tpop %rdi\t# type2 address" << endl;
+			cout << "\tpop %rsi\t# type1 address" << endl;
+
+			// Call custom strcat-like function
+			cout << "\tcall __concatStrings\n";
+
+			cout << "\tpush %rax\t# result of concatenation\n";
+
+			type1 = TYPE_STRING;
+			continue;
+		} else if (commonType == TYPE_DOUBLE)
 		{
 			// Promote operands if needed (convert int → double)
 			type2 = PromoteToDoubleIfNeeded(type2, 1);
@@ -496,6 +551,9 @@ TYPE Type(void){
 	} else if (current == CHAR)
 	{
 		type = TYPE_CHAR;
+	} else if (current == STRING)
+	{
+		type = TYPE_STRING;
 	} else {
 		type = TYPE_UNDEFINED;
 	}
@@ -687,8 +745,6 @@ TYPE Expression(void){
 	}
 }
 
-void Statement(void);
-
 // AssignementStatement := Identifier ":=" Expression
 string AssignementStatement(void) {
 	string variable;
@@ -711,36 +767,43 @@ string AssignementStatement(void) {
 	TYPE type2 = Expression();
 
 	// Allow assignment from numeric to boolean if value is 0 or 1
-if (type1 == TYPE_BOOLEAN && (type2 == TYPE_UNSIGNED_INT || type2 == TYPE_DOUBLE)) {
-		string exprText = lexer->YYText(); // Get raw token text
+	if (type1 == TYPE_BOOLEAN && (type2 == TYPE_UNSIGNED_INT || type2 == TYPE_DOUBLE)) {
+			cout << "\t# Assigning string address to " << variable << endl;
+			string exprText = lexer->YYText(); // Get raw token text
 
-		if (exprText == "0" || exprText == "1" || exprText == "0.0" || exprText == "1.0") {
-			cout << "\t# Conversion numérique vers booléen" << endl;
-			cout << "\tcmp $0, %rax" << endl;           // compare with zero
-			cout << "\tsete %al" << endl;               // set %al = 1 if equal, 0 otherwise
-			cout << "\tmovzbq %al, %rax" << endl;       // zero-extend to 64-bit
-		} else {
-			TypeError("Affectation invalide : valeur numérique non booléenne assignée à '" + variable + "'");
-		}
+			if (exprText == "0" || exprText == "1" || exprText == "0.0" || exprText == "1.0") {
+				cout << "\t# Conversion numérique vers booléen" << endl;
+				cout << "\tcmp $0, %rax" << endl;           // compare with zero
+				cout << "\tsete %al" << endl;               // set %al = 1 if equal, 0 otherwise
+				cout << "\tmovzbq %al, %rax" << endl;       // zero-extend to 64-bit
+			} else {
+				TypeError("Affectation invalide : valeur numérique non booléenne assignée à '" + variable + "'");
+			}
 	}
 	else if (type1 != type2) {
 		TypeError("Affectation invalide : la variable '" + variable +
-				  "' est de type " + TypeToString(type1) +
-				  ", mais l'expression est de type " + TypeToString(type2));
+				"' est de type " + TypeToString(type1) +
+				", mais l'expression est de type " + TypeToString(type2));
 	}
-
-	if (type1 == TYPE_UNSIGNED_INT) {
+	else if (type1 == TYPE_UNSIGNED_INT) {
+		cout << "\t# Assigning string address to " << variable << endl;
 		cout << "\tpop %rax" << endl;
 		cout << "\tmov %rax, " << variable << "(%rip)" << endl;
 	}
 	else if (type1 == TYPE_BOOLEAN || type1 == TYPE_CHAR) {
+		cout << "\t# Assigning string address to " << variable << endl;
 		cout << "\tpop %rax" << endl;
 		cout << "\tmovb %al, " << variable << "(%rip)" << endl;
 	}
 	else if (type1 == TYPE_DOUBLE) {
+		cout << "\t# Assigning string address to " << variable << endl;
 		cout << "\tmovsd (%rsp), %xmm0" << endl;
 		cout << "\taddq $8, %rsp" << endl;
 		cout << "\tmovsd %xmm0, " << variable << "(%rip)" << endl;
+	} else if (type1 == TYPE_STRING) {
+		cout << "\t# Assigning string address to " << variable << endl;
+		cout << "\tpop %rax\t# Load address of string" << endl;
+		cout << "\tmov %rax, " << variable << "(%rip)\t# Assign to string variable" << endl;
 	} else {
 	Error("Type inconnu pour l'affectation dans AssignementStatement()");
 	}
@@ -879,33 +942,33 @@ void ForStatement(void){
     cout << "\tpop %rdx\n";
 	cout << "\tmov %rdx, %rbx    # keep limit in callee-saved reg\n";
 
-	if (current != DO) Error("Expected 'DO'");
-	current = (TOKEN) lexer->yylex();
-
 	// Optional STEP
 	if (current == STEP) {
 		current = (TOKEN) lexer->yylex();
 		if (current != NUMBER) Error("Expected number after STEP");
 		step = atoi(lexer->YYText());
 		current = (TOKEN) lexer->yylex();
-	}
+	}	
 
-	// Jump to test before first iteration
-	cout << "\tjmp TestFor" << forTag << endl;
+	if (current != DO) Error("Expected 'DO'");
+	current = (TOKEN) lexer->yylex();
 
-	// Loop body
+	// Test the condition
+	cout << "TestFor" << forTag << ":" << endl;
+	cout << "\tmov " << var << "(%rip), %rax\t# reload loop counter" << endl;
+	cout << "\tcmp %rbx, %rax\t# compare counter with limit" << endl;
+	cout << "\tjg EndFor" << forTag << "\t# exit if counter > limit" << endl;
+
 	cout << "LoopFor" << forTag << ":" << endl;
-	StructuredStatement();  // loop body
+	StructuredStatement();
 
-    cout << "\tmov " << var << "(%rip), %rax    # reload counter\n";
-    cout << "\tadd $" << step << ", %rax\n";
-    cout << "\tmov %rax, " << var << "(%rip)    # store incremented counter\n";
+	cout << "\tmov " << var << "(%rip), %rax\t# reload counter" << endl;
+	cout << "\tadd $" << step << ", %rax\t# increment by step" << endl;
+	cout << "\tmov %rax, " << var << "(%rip)\t# store back updated counter" << endl;
 
-	// test & jump back
-    cout << "TestFor" << forTag << ":\n";
-    cout << "\tcmp %rbx, %rax    # compare limit (rbx), counter\n";
-    cout << "\tjbe LoopFor" << forTag << "\n";
-    cout << "EndFor" << forTag << ":\n";
+	// Jumbe to retest the condition for the next iteration
+	cout << "\tjmp TestFor" << forTag << endl;
+	cout << "EndFor" << forTag << ":" << endl;
 }
 
 // BlockStatement := "BEGIN" Statement { ";" Statement } "END"
@@ -1081,7 +1144,14 @@ void DisplayStatement(void) {
         cout << "\tmovl   $0, %eax                  # no SSE regs\n";
         cout << "\tcall   printf@PLT\n";
 
-    } else {
+    } else if (ExprType == TYPE_STRING) {
+		cout << "\t# display string\n";
+		cout << "\tpop %rsi\t\t# address of string\n";
+		cout << "\tleaq FormatString(%rip), %rdi\t# format\n";
+		cout << "\tmovl $0, %eax\t# no FP registers used\n";
+		cout << "\tcall printf@PLT\n";
+
+	} else {
         Error("DISPLAY ne supporte que les types INTEGER, DOUBLE et CHAR.");
     }
 }
@@ -1187,6 +1257,47 @@ void StatementPart(void){
 	if(current!=DOT)
 		Error("caractère '.' attendu");
 	current=(TOKEN) lexer->yylex();
+}
+
+// ProcedureDeclaration ::= procedure <identifier> ; <block>
+void ProcedureDeclaration() {
+    if (current != PROCEDURE)
+        Error("Expected 'procedure'");
+
+    current = (TOKEN)lexer->yylex(); // read after 'procedure'
+
+    if (current != ID)
+        Error("Expected identifier after 'procedure'");
+
+    string procName = lexer->YYText();
+    cout << "\n\t# Procedure declaration\n";
+    cout << "\t.globl " << procName << endl;
+    cout << procName << ":" << endl;
+
+    current = (TOKEN)lexer->yylex();
+
+    if (current != SEMICOLON)
+        Error("Expected ';' after procedure name");
+
+    current = (TOKEN)lexer->yylex();
+
+    // Prologue
+    cout << "\tpush %rbp\t# Save base pointer" << endl;
+    cout << "\tmov %rsp, %rbp\t# Set new base pointer" << endl;
+
+    CompoundStatement();  // body of the procedure
+
+    current = (TOKEN)lexer->yylex(); // read after 'END'
+
+    if (current != SEMICOLON)
+        Error("Expected SEMICOLON after 'procedure END'");
+
+    current = (TOKEN)lexer->yylex(); // read after 'SEMICOLON'
+
+    // Epilogue
+    cout << "\tmov %rbp, %rsp\t# Restore stack" << endl;
+    cout << "\tpop %rbp\t# Restore base pointer" << endl;
+    cout << "\tret\t# Return from procedure" << endl;
 }
 
 // ParameterGroup ::= <identifier> {, <identifier>} : <type identifier>
@@ -1308,21 +1419,33 @@ void Program(void){
 	StatementPart();	
 }
 
-int main(void){	// First version : Source code on standard input and assembly code on standard output
+int main(void) {
 	// Header for gcc assembler / linker
-	cout << "\t\t\t# This code was produced by the CERI Compiler"<<endl;
+	cout << "\t\t\t# This code was produced by the CERI Compiler" << endl;
+
+	// Print format strings first
 	cout << "\t.section .rodata\n";
-	cout << "FormatUInt: .asciz \"%llu\\n\"\n\n";
-	// Let's proceed to the analysis and code production
-	current=(TOKEN) lexer->yylex();
+	cout << "FormatUInt: .asciz \"%llu\\n\"\n";
+	cout << "FormatString: .asciz \"%s\\n\"\n";
+	cout << "FormatString2: .asciz \"%f\\n\"\n";
+	cout << "FormatString3: .asciz \"%c\\n\"\n";
+
+	// Begin parsing and code generation
+	current = (TOKEN) lexer->yylex();
 	Program();
-	// Trailer for the gcc assembler / linker
-	cout << "\tmovq %rbp, %rsp\t\t# Restore the position of the stack's top"<<endl;
-	cout << "\tret\t\t\t# Return from main function"<<endl;
+
+	// Restore stack and return
+	cout << "\tmovq %rbp, %rsp\t\t# Restore the position of the stack's top" << endl;
+	cout << "\tret\t\t\t# Return from main function" << endl;
+
+	// Emit string literals used in the program
+	DumpStringLiterals();
+
+	// Trailer
 	cout << "\t.section .note.GNU-stack,\"\",@progbits\n";
-	if(current!=FEOF){
-		cerr <<"Caractères en trop à la fin du programme : ["<<current<<"]";
+
+	if (current != FEOF) {
+		cerr << "Caractères en trop à la fin du programme : [" << current << "]";
 		Error("."); // unexpected characters at the end of program
 	}
-
 }
