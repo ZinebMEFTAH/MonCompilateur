@@ -26,10 +26,14 @@
 #include "tokeniser.h"
 #include <cstring>
 #include <map>
-#include <map>
 #include <cstdint>  
+<<<<<<< HEAD
 #include <stdlib.h>
 #include <string.h>
+=======
+#include <string>
+
+>>>>>>> 6b33284 (TP6 my essay1)
 
 using namespace std;
 
@@ -49,6 +53,44 @@ FlexLexer* lexer = new yyFlexLexer; // This is the flex tokeniser
 enum TYPE { TYPE_UNDEFINED, TYPE_UNSIGNED_INT, TYPE_BOOLEAN, TYPE_CHAR, TYPE_DOUBLE, TYPE_STRING};
 map<string, TYPE> VariablesWithTypes;
 unsigned long TagNumber=0;
+int stringCounter = 0;
+map<string, string> stringLiterals;
+
+std::map<std::string, bool> Procedures;
+
+const char* TokenName(TOKEN t) {
+    switch (t) {
+        case NUMBER: return "NUMBER";
+        case FLOATCONST: return "FLOATCONST";
+        case CHARCONST: return "CHARCONST";
+        case STRINGCONST: return "STRINGCONST";
+        case TRUE0: return "TRUE";
+        case FALSE0: return "FALSE";
+        case ID: return "ID";
+        case NOT: return "NOT";
+        case LPARENT: return "LPARENT";
+        case RPARENT: return "RPARENT";
+        case ADDOP: return "ADDOP";
+        case MULOP: return "MULOP";
+        case RELOP: return "RELOP";
+        case DISPLAY: return "DISPLAY";
+        case ASSIGN: return "ASSIGN";
+        case COLON: return "COLON";
+        case SEMICOLON: return "SEMICOLON";
+        case DOT: return "DOT";
+        case BEGIN0: return "BEGIN";
+        case END: return "END";
+        case VAR: return "VAR";
+        case BOOLEAN: return "BOOLEAN";
+        case INTEGER: return "INTEGER";
+        case DOUBLE: return "DOUBLE";
+        case CHAR: return "CHAR";
+        case STRING: return "STRING";
+        case FEOF: return "FEOF";
+        case UNKNOWN: return "UNKNOWN";
+        default: return "???";
+    }
+}
 
 int stringCounter = 0; // global label counter
 map<string, string> stringLiterals; // global storage for unique labels
@@ -76,6 +118,7 @@ string TypeToString(TYPE t) {
 		case TYPE_BOOLEAN: return "BOOLEAN";
 		case TYPE_CHAR: return "CHAR";
 		case TYPE_DOUBLE: return "DOUBLE";
+		case TYPE_STRING: return "STRING";
 		case TYPE_UNDEFINED: return "UNDEFINED";
 		default: return "UNKNOWN";
 	}
@@ -108,37 +151,79 @@ TYPE CheckBinaryOperationTypes(TYPE t1, TYPE t2, string op) {
 	return TYPE_UNDEFINED; // not reached
 }
 
-// Promote integer to double if needed
-// - `type`: type of the operand (should be TYPE_UNSIGNED_INT or TYPE_DOUBLE)
-// - `position`: 1 for top of stack (type2), 2 for second value (type1)
-// Returns the new promoted type.
+
+// PromoteToDoubleIfNeeded : si type == INTEGER, on convertit l'entier poppé en double.
+// Si type == DOUBLE, on charge le double existant en XMM.
+
+void CallProcedure(void) {
+    string name = lexer->YYText();
+    // Align stack so the callee (any procedure) sees %rsp % 16 == 0 on entry
+    cout << "\tsub $8, %rsp    # align stack before calling " << name << "\n";
+    cout << "\tcall " << name << "\n";
+    cout << "\tadd $8, %rsp    # restore stack after calling " << name << "\n";
+    current = (TOKEN) lexer->yylex();  // Skip procedure name
+    if (current != SEMICOLON)
+        Error("Expected ';' after procedure call");
+}
+
+// PromoteToDoubleIfNeeded : si type == INTEGER, on convertit l'entier poppé en double.
+// Si type == DOUBLE, on charge le double existant en XMM.
 TYPE PromoteToDoubleIfNeeded(TYPE type, int position) {
-	if (type != TYPE_UNSIGNED_INT) return type;
-
-	cout << "\t# Promote ";
-	if (position == 1)
-		cout << "type2 (top of stack)";
-	else
-		cout << "type1 (second on stack)";
-	cout << " to double\n";
-
-	if (position == 1) {
-		// Promote type2 (top of stack)
-		cout << "\tpop %rax\n";
-		cout << "\tcvtsi2sd %rax, %xmm0\n";
-		cout << "\tsubq $8, %rsp\n";
-		cout << "\tmovsd %xmm0, (%rsp)\n";
-	} else if (position == 2) {
-		// We must pop both, promote second (type1), then re-push top (type2)
-		cout << "\tpop %rax\t\t# type2 (already promoted)\n";
-		cout << "\tpop %rbx\t\t# type1 to be promoted\n";
-		cout << "\tcvtsi2sd %rbx, %xmm1\n";
-		cout << "\tsubq $8, %rsp\n";
-		cout << "\tmovsd %xmm1, (%rsp)\n";
-		cout << "\tsubq $8, %rsp\n";
-		cout << "\tmovsd %xmm0, (%rsp)\t# re-push type2\n";
-	}
-	return TYPE_DOUBLE;
+    if (type == TYPE_UNSIGNED_INT) {
+        // ----- cas INTEGER -----
+        if (position == 1) {
+            // Sur la pile : [ INTEGER(type2) ] [ … ]
+            // => on poppe l’entier, on le convertit en double, on écrit 8 octets
+            cout << "\t# Promote type2 (INTEGER) → double\n";
+            cout << "\tpop   %rax                # poppe l’INTEGER(type2)\n";
+            cout << "\tcvtsi2sd %rax, %xmm0      # integer→double dans xmm0\n";
+            cout << "\tsubq  $8, %rsp            # réserve 8 octets pour le nouveau double\n";
+            cout << "\tmovsd %xmm0, (%rsp)       # write double(type2) au sommet de la pile\n";
+        } else {
+            // position == 2 : sur la pile : [ double(type2) ] [ INTEGER(type1) ] [ … ]
+            cout << "\t# Promote type1 (INTEGER) → double\n";
+            // 1) Charger & pop double(type2) dans FPU
+            cout << "\tfldl  (%rsp)              # st(0) ← double(type2)\n";
+            cout << "\taddq  $8, %rsp            # pop double(type2)\n";
+            // 2) Popper l’entier (type1) et convertir
+            cout << "\tpop   %rbx                # poppe l’INTEGER(type1)\n";
+            cout << "\tcvtsi2sd %rbx, %xmm1      # integer→double dans xmm1\n";
+            // 3) Réécrire d’abord double(type1), puis double(type2)
+            cout << "\tsubq  $8, %rsp            # réserve 8 octets pour double(type1)\n";
+            cout << "\tmovsd %xmm1, (%rsp)       # write double(type1)\n";
+            cout << "\tsubq  $8, %rsp            # réserve 8 octets pour re‐pousser double(type2)\n";
+            cout << "\tfstpl (%rsp)              # write st(0)=double(type2) au sommet de la pile\n";
+        }
+        return TYPE_DOUBLE;
+    }
+    else if (type == TYPE_DOUBLE) {
+        // ----- cas DOUBLE déjà sur la pile -----
+        if (position == 1) {
+            // Sur la pile : [ double(type2) ] [ … ]
+            cout << "\t# Reload type2 (DOUBLE) into st(0) and re‐push\n";
+            cout << "\tfldl  (%rsp)              # st(0) ← double(type2)\n";
+            cout << "\taddq  $8, %rsp            # pop double(type2)\n";
+            cout << "\tsubq  $8, %rsp            # réserve 8 octets pour réécrire\n";
+            cout << "\tfstpl (%rsp)              # write st(0)=double(type2) au sommet de la pile\n";
+        } else {
+            // position == 2 : sur la pile : [ double(type2) ] [ double(type1) ] [ … ]
+            cout << "\t# Reload type1 (DOUBLE) into st(0) and re‐push both\n";
+            // 1) Charger & pop double(type2)
+            cout << "\tfldl  (%rsp)              # st(0) ← double(type2)\n";
+            cout << "\taddq  $8, %rsp            # pop double(type2)\n";
+            // 2) Charger & pop double(type1)
+            cout << "\tfldl  (%rsp)              # st(0) ← double(type1), st(1) ← type2\n";
+            cout << "\taddq  $8, %rsp            # pop double(type1)\n";
+            // 3) Réécrire d’abord double(type1), puis double(type2)
+            cout << "\tsubq  $8, %rsp            # réserve 8 octets pour double(type1)\n";
+            cout << "\tfstpl (%rsp)              # write st(0)=double(type1)\n";
+            cout << "\tsubq  $8, %rsp            # réserve 8 octets pour double(type2)\n";
+            cout << "\tfstpl (%rsp)              # write st(0)=double(type2)\n";
+        }
+        return TYPE_DOUBLE;
+    }
+    // TYPE_CHAR ou TYPE_UNDEFINED n’arrivent jamais ici
+    return type;
 }
 
 char* __concatStrings(const char* s1, const char* s2) {
@@ -190,29 +275,37 @@ TYPE Identifier(void) {
 	TYPE type = VariablesWithTypes[name];
 
 	switch (type) {
+		// Handle loading unsigned integer variable
 		case TYPE_UNSIGNED_INT:
 			cout << "\tmov " << name << "(%rip), %rax\t# Load integer variable" << endl;
 			cout << "\tpush %rax" << endl;
 			break;
 
+		// Handle loading boolean or character variable (1 byte)
 		case TYPE_BOOLEAN:
 		case TYPE_CHAR:
 			cout << "\tmovzbl " << name << "(%rip), %eax\t# Load byte (bool/char)" << endl;
 			cout << "\tpush %rax" << endl;
 			break;
 
+		// Handle loading double variable (64-bit floating point)
 		case TYPE_DOUBLE:
 			cout << "\tmovsd " << name << "(%rip), %xmm0\t# Load double variable" << endl;
 			cout << "\tsubq $8, %rsp" << endl;
 			cout << "\tmovsd %xmm0, (%rsp)" << endl;
+			break;
 
-
+		// Handle loading string variable address
+		case TYPE_STRING:
+			cout << "\tmov " << name << "(%rip), %rax\t# Load string pointer stored in variable" << endl;
+			cout << "\tpush %rax\t# Push actual string address" << endl;
 			break;
 
 		default:
 			Error("Type de variable non supporté dans Identifier()");
 	}
 
+	// Advance to the next token after identifier
 	current = (TOKEN) lexer->yylex();
 	return type;
 }
@@ -270,7 +363,10 @@ TYPE StringConst() {
 }
 
 void DumpStringLiterals() {
+<<<<<<< HEAD
     cout << "\n.section .rodata\n";
+=======
+>>>>>>> 6b33284 (TP6 my essay1)
     for (const auto& [label, value] : stringLiterals) {
         cout << label << ":\n";
         cout << "\t.string \"" << value << "\"\n";
@@ -305,7 +401,11 @@ TYPE Factor(void) {
 	}
 	else if (current == CHARCONST) {
 		return CharConst();
+<<<<<<< HEAD
 	} 
+=======
+	}
+>>>>>>> 6b33284 (TP6 my essay1)
 	else if (current == STRINGCONST)
 	{
 		return StringConst();
@@ -316,15 +416,19 @@ TYPE Factor(void) {
 		cout << "\tpush $0xFFFFFFFFFFFFFFFF\t\t# True"<<endl;	
 		current = (TOKEN) lexer->yylex();  // Advance to next token
 		return TYPE_BOOLEAN;
-	} else if (current == FALSE0)
+	} 
+	else if (current == FALSE0)
 	{
 		cout << "\tpush $0\t\t# False"<<endl;
 		current = (TOKEN) lexer->yylex();  // Advance to next token
 		return TYPE_BOOLEAN;
+	} else if (current == ID && Procedures.count(lexer->YYText())) {
+		CallProcedure();
 	}
 	else if (current == ID) {
 		return Identifier();
-	} else if (current == NOT) {
+	} 
+	else if (current == NOT) {
 		current = (TOKEN) lexer->yylex();
 		TYPE t = Factor();
 		if (t != TYPE_BOOLEAN)
@@ -334,9 +438,14 @@ TYPE Factor(void) {
 		cout << "\tnot %rax" << endl;
 		cout << "\tpush %rax" << endl;
 		return TYPE_BOOLEAN;
-    } else {
+    } 
+	else {
+		std::cerr << "Erreur dans Factor() : Token inattendu '" 
+				<< lexer->YYText() << "' (code = " << current 
+				<< ", type = " << TokenName(current) << ") à la ligne " 
+				<< lexer->lineno() << std::endl;
 		Error("'(' ou chiffre ou lettre attendue");
-		return TYPE_UNDEFINED;  // Optional fallback
+		return TYPE_UNDEFINED;
 	}
 }
 
@@ -381,34 +490,33 @@ TYPE Term(void){
 		
 		if (commonType == TYPE_DOUBLE)
 		{
-			// Promote type2 (top of stack)
+			// ----- VERSION CORRIGÉE pour multiplication/division en double -----
+			// On part du principe que, juste avant, la pile contient [valeur2][valeur1] (int ou double).
 			type2 = PromoteToDoubleIfNeeded(type2, 1);
 			type1 = PromoteToDoubleIfNeeded(type1, 2);
 
-			// Now both operands on stack as double
-			cout << "\tfldl (%rsp)           # Load type2 → st(0)" << endl;
-			cout << "\taddq $8, %rsp" << endl;
-			cout << "\tfldl (%rsp)           # Load type1 → st(0), type2 → st(1)" << endl;
-			cout << "\taddq $8, %rsp" << endl;
+			cout << "\tfldl  (%rsp)           # st(0) ← valeur2 (double ou int)\n";
+			cout << "\taddq  $8, %rsp         # pop valeur2\n";
+
+			cout << "\tfldl  (%rsp)           # st(0) ← valeur1 (double ou int), st(1) ← valeur2\n";
+			cout << "\taddq  $8, %rsp         # pop valeur1\n";
 
 			switch (mulop) {
 				case MUL:
-					cout << "\tfmulp %st, %st(1)       # DOUBLE MUL" << endl;
+					cout << "\tfmulp %st, %st(1)     # st(1) ← valeur2 * valeur1\n";
 					break;
 				case DIV:
-					cout << "\tfdivp %st, %st(1)       # DOUBLE DIV" << endl;
+					cout << "\tfdivp %st, %st(1)     # st(1) ← valeur2 / valeur1\n";
 					break;
 				default:
 					Error("opérateur multiplicatif attendu");
 			}
 
-			cout << "\tsubq $8, %rsp         # Make space" << endl;
-			cout << "\tfstpl (%rsp)          # Store result" << endl;
+			cout << "\tsubq  $8, %rsp         # réserve 8 octets pour le résultat\n";
+			cout << "\tfstpl (%rsp)          # write résultat (double) au sommet de la pile\n";
 
 			type1 = commonType;
-		}
-
-		
+		}		
 		
 		else {
 			cout << "\tpop %rbx" << endl;
@@ -458,6 +566,7 @@ TYPE SimpleExpression(void){
 	OPADD adop;
 	TYPE type1 = Term();
 
+	// Handle additive operations (e.g., +, -, ||)
 	while(current == ADDOP){
 		adop = AdditiveOperator();		
 		TYPE type2 = Term();			
@@ -472,6 +581,7 @@ TYPE SimpleExpression(void){
 
 		TYPE commonType = CheckBinaryOperationTypes(type1, type2, op);
 
+<<<<<<< HEAD
 		if (type1 == TYPE_STRING && type2 == TYPE_STRING && adop == ADD) {
 			cout << "\t# String concatenation: concatenate type1 + type2" << endl;
 
@@ -486,50 +596,84 @@ TYPE SimpleExpression(void){
 			type1 = TYPE_STRING;
 			continue;
 		} else if (commonType == TYPE_DOUBLE)
+=======
+		// Special case: string concatenation (a + b)
+		if (type1 == TYPE_STRING && type2 == TYPE_STRING && adop == ADD) {
+			cout << "\t# Concatenating string + string\n";
+			cout << "\tpop %rsi    # first string address\n";
+			cout << "\tpop %rdi    # second string address\n";
+			cout << "\tsub $8, %rsp    # align stack before calling __concatStrings\n";
+			cout << "\tcall __concatStrings\n";
+			cout << "\tadd $8, %rsp    # restore stack after call\n";
+			cout << "\tmov %rax, tempStringSlot(%rip)\t# Save result\n";
+			cout << "\tmov tempStringSlot(%rip), %rax\n";
+			cout << "\tpush %rax\t# Push result for further use\n";
+			type1 = commonType;
+		}
+
+		// Handle addition/subtraction with promotion to DOUBLE
+		else if (commonType == TYPE_DOUBLE)
+>>>>>>> 6b33284 (TP6 my essay1)
 		{
-			// Promote operands if needed (convert int → double)
-			type2 = PromoteToDoubleIfNeeded(type2, 1);
-			type1 = PromoteToDoubleIfNeeded(type1, 2);
+			// 1) Ensure operand 2 is a double
+			cout << "\t# 1) Pop or reload operand 2 as a real double\n";
+			if (type2 == TYPE_UNSIGNED_INT) {
+				cout << "\tpop   %rax                # pop raw integer (type2)\n";
+				cout << "\tcvtsi2sd %rax, %xmm0      # convert int→double\n";
+				cout << "\tsubq  $8, %rsp            # reserve 8B for double\n";
+				cout << "\tmovsd %xmm0, (%rsp)       # store converted double\n";
+			}
+			// Now the top of the stack definitely contains a 64‐bit double:
+			cout << "\tfldl  (%rsp)             # load operand2 (double) into st(0)\n";
+			cout << "\taddq  $8, %rsp           # pop operand2\n";
 
-			cout << "\tfldl (%rsp)           # Load type2 → st(0)" << endl;
-			cout << "\taddq $8, %rsp" << endl;
-			cout << "\tfldl (%rsp)           # Load type1 → st(0), type2 → st(1)" << endl;
-			cout << "\taddq $8, %rsp" << endl;
+			// 2) Ensure operand 1 is a double
+			cout << "\t# 2) Pop or reload operand1 as a real double\n";
+			if (type1 == TYPE_UNSIGNED_INT) {
+				cout << "\tpop   %rax                # pop raw integer (type1)\n";
+				cout << "\tcvtsi2sd %rax, %xmm0      # convert int→double\n";
+				cout << "\tsubq  $8, %rsp            # reserve 8B for double\n";
+				cout << "\tmovsd %xmm0, (%rsp)       # store converted double\n";
+			}
+			// Now top of the stack holds operand1 as a valid double:
+			cout << "\tfldl  (%rsp)             # load operand1 (double) into st(0)\n";
+			cout << "\taddq  $8, %rsp           # pop operand1\n";
 
+			// 3) Perform the floating-point operation
 			switch(adop){
 				case ADD:
-					cout << "\tfaddp %st, %st(1)\n";
+					cout << "\tfaddp %st, %st(1)        # DOUBLE ADD\n";
 					break;
 				case SUB:
-					cout << "\tfsubp %st, %st(1)\n";
+					cout << "\tfsubp %st, %st(1)        # DOUBLE SUB\n";
 					break;
 				default:
 					Error("opérateur additif attendu");
 			}
 
-			cout << "\tsubq $8, %rsp         # Make space\n";
-			cout << "\tfstpl (%rsp)          # Store result\n";
+			cout << "\tsubq $8, %rsp            # reserve 8 bytes for result\n";
+			cout << "\tfstpl (%rsp)             # pop & store result atop the stack\n";
 
 			type1 = commonType;
-		} else {
-			cout << "\tpop %rbx\n";
-			cout << "\tpop %rax\n";
-
+		}
+		// Default: integer or boolean operations (ADD, SUB, OR)
+		else {
+			cout << "\tpop %rbx   # Pop right operand\n";
+			cout << "\tpop %rax   # Pop left operand\n";
 			switch(adop){
 				case OR:
-					cout << "\torq %rbx, %rax\n";
+					cout << "\torq %rbx, %rax   # Integer OR or Boolean OR\n";
 					break;
 				case ADD:
-					cout << "\taddq %rbx, %rax\n";
+					cout << "\taddq %rbx, %rax  # Integer addition\n";
 					break;
 				case SUB:
-					cout << "\tsubq %rbx, %rax\n";
+					cout << "\tsubq %rbx, %rax  # Integer subtraction\n";
 					break;
 				default:
 					Error("opérateur additif inconnu");
 			}
-
-			cout << "\tpush %rax\n";
+			cout << "\tpush %rax   # Push result\n";
 			type1 = commonType;
 		}
 	}
@@ -567,10 +711,8 @@ void VarDeclarationPart(void){
 	if(current!=VAR) 	Error("caractère 'VAR' attendu");
 	current = (TOKEN) lexer->yylex();  // saute le mot-clé VAR
 	cout << "\t.data"<<endl;
-	cout << "\tFormatString1:    .string \"%llu\\n\"" << endl;
-	cout << "\tFormatString2:    .string \"%f\\n\"" << endl;
-	cout << "\tFormatString3:    .string \"%c\\n\"" << endl;
 	cout << "\t.align 8"<<endl;
+	cout << "tempStringSlot: .quad 0     # temp for intermediate string\n";
 	VarDeclaration();
 	while(current==SEMICOLON){
 		current=(TOKEN) lexer->yylex();
@@ -637,6 +779,9 @@ void VarDeclaration(void){
 		} else if (type == TYPE_DOUBLE)
 		{
 			cout << var << ":\t.double 0.0  # 64-bit double"<<endl;
+		} else if (type == TYPE_STRING)
+		{
+			cout << var << ":\t.quad 0     # pointer to string (64-bit)" << endl;
 		}
 	}
 }
@@ -745,6 +890,10 @@ TYPE Expression(void){
 	}
 }
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 6b33284 (TP6 my essay1)
 // AssignementStatement := Identifier ":=" Expression
 string AssignementStatement(void) {
 	string variable;
@@ -768,6 +917,7 @@ string AssignementStatement(void) {
 
 	// Allow assignment from numeric to boolean if value is 0 or 1
 	if (type1 == TYPE_BOOLEAN && (type2 == TYPE_UNSIGNED_INT || type2 == TYPE_DOUBLE)) {
+<<<<<<< HEAD
 			cout << "\t# Assigning string address to " << variable << endl;
 			string exprText = lexer->YYText(); // Get raw token text
 
@@ -779,6 +929,12 @@ string AssignementStatement(void) {
 			} else {
 				TypeError("Affectation invalide : valeur numérique non booléenne assignée à '" + variable + "'");
 			}
+=======
+			cout << "\t# Conversion numérique vers booléen" << endl;
+			cout << "\tcmp $0, %rax" << endl;           // compare with zero
+			cout << "\tsete %al" << endl;               // set %al = 1 if equal, 0 otherwise
+			cout << "\tmovzbq %al, %rax" << endl;       // zero-extend to 64-bit
+>>>>>>> 6b33284 (TP6 my essay1)
 	}
 	else if (type1 != type2) {
 		TypeError("Affectation invalide : la variable '" + variable +
@@ -804,7 +960,12 @@ string AssignementStatement(void) {
 		cout << "\t# Assigning string address to " << variable << endl;
 		cout << "\tpop %rax\t# Load address of string" << endl;
 		cout << "\tmov %rax, " << variable << "(%rip)\t# Assign to string variable" << endl;
+<<<<<<< HEAD
 	} else {
+=======
+	}
+	else {
+>>>>>>> 6b33284 (TP6 my essay1)
 	Error("Type inconnu pour l'affectation dans AssignementStatement()");
 	}
 
@@ -985,9 +1146,9 @@ void CompoundStatement(void){
 		StructuredStatement();
 	}
 
-
 	if (current != END){
-	cerr << "[DEBUG] current token = '" << lexer->YYText() << "' (" << current << ")" << endl;		Error("Expected 'END'");
+		cerr << "[DEBUG] current token = '" << lexer->YYText() << "' (" << current << ")" << endl;		
+		Error("Expected 'END'");
 	}
 	current = (TOKEN) lexer->yylex();
 }
@@ -1126,23 +1287,25 @@ void DisplayStatement(void) {
 		cout << "\tmovl   $0, %eax                 # no SSE args\n";
 		cout << "\tcall   printf@PLT\n\n";
 	
-    } else if (ExprType == TYPE_DOUBLE) {
+    } 
+	else if (ExprType == TYPE_DOUBLE) {
         // double: printf("%f\n", xmm0)
-        cout << "\tmovsd  (%rsp), %xmm0            # load double from stack\n";
+		cout << "\tmovsd  (%rsp), %xmm0            # load double from stack\n";
         cout << "\taddq   $8, %rsp                 # pop it\n";
-        cout << "\tsubq   $8, %rsp                 # align stack (RSP%16==8)\n";
+		
         cout << "\tleaq   FormatString2(%rip), %rdi# format string → RDI\n";
         cout << "\tmovl   $1, %eax                  # one SSE-reg in varargs\n";
         cout << "\tcall   printf@PLT\n";
-        cout << "\taddq   $8, %rsp                 # restore stack\n";
 
-    } else if (ExprType == TYPE_CHAR) {
+    } 
+	else if (ExprType == TYPE_CHAR) {
         // char: printf("%c\n", al)
         cout << "\tpop    %rax                     # char in AL\n";
         cout << "\tmovb   %al, %sil                # 2nd arg (char) → SIL\n";
         cout << "\tleaq   FormatString3(%rip), %rdi# format → RDI\n";
         cout << "\tmovl   $0, %eax                  # no SSE regs\n";
         cout << "\tcall   printf@PLT\n";
+<<<<<<< HEAD
 
     } else if (ExprType == TYPE_STRING) {
 		cout << "\t# display string\n";
@@ -1152,6 +1315,19 @@ void DisplayStatement(void) {
 		cout << "\tcall printf@PLT\n";
 
 	} else {
+=======
+    } 
+    else if (ExprType == TYPE_STRING) {
+        cout << "\t# display string\n";
+        cout << "\tpop %rsi\t\t# address of string\n";
+        cout << "\tsub $8, %rsp    # align stack before printf\n";
+        cout << "\tleaq FormatString(%rip), %rdi\t# format\n";
+        cout << "\tmovl $0, %eax\t# no FP registers used\n";
+        cout << "\tcall printf@PLT\n";
+        cout << "\tadd $8, %rsp    # restore stack after printf\n";
+    }
+	else {
+>>>>>>> 6b33284 (TP6 my essay1)
         Error("DISPLAY ne supporte que les types INTEGER, DOUBLE et CHAR.");
     }
 }
@@ -1192,7 +1368,10 @@ void StructuredStatement(void){
 	if (current == BEGIN0)
 	{
 		CompoundStatement();
-	} else if (current == ID)
+	} else if (current == ID && Procedures.count(lexer->YYText())) {
+		CallProcedure();
+	}
+	else if (current == ID)
 	{
 		AssignementStatement();
 	} else if ((current == IF) || (current == CASE) )
@@ -1245,24 +1424,26 @@ void Statement(void){
 
 // StatementPart := Statement {";" Statement} "."
 void StatementPart(void){
-	cout << "\t.text\t\t# The following lines contain the program"<<endl;
-	cout << "\t.globl main\t# The main function must be visible from outside"<<endl;
-	cout << "main:\t\t\t# The main function body :"<<endl;
-	cout << "\tmovq %rsp, %rbp\t# Save the position of the stack's top"<<endl;
-	StructuredStatement();
-	while(current==SEMICOLON){
-		current=(TOKEN) lexer->yylex();
-		StructuredStatement();
-	}
-	if(current!=DOT)
-		Error("caractère '.' attendu");
-	current=(TOKEN) lexer->yylex();
+    cout << "\t.text\t\t# The following lines contain the program"<<endl;
+    cout << "\t.globl main\t# The main function must be visible from outside"<<endl;
+    cout << "main:\t\t\t# The main function body :"<<endl;
+    cout << "\tpush %rbp\t# Save old base pointer"<<endl;
+    cout << "\tmov %rsp, %rbp\t# Establish new base pointer"<<endl;
+
+    StructuredStatement();
+    while(current == SEMICOLON){
+        current = (TOKEN) lexer->yylex();
+        StructuredStatement();
+    }
+    if(current != DOT) Error("caractère '.' attendu");
+    current = (TOKEN) lexer->yylex();
 }
 
 // ProcedureDeclaration ::= procedure <identifier> ; <block>
 void ProcedureDeclaration() {
     if (current != PROCEDURE)
         Error("Expected 'procedure'");
+<<<<<<< HEAD
 
     current = (TOKEN)lexer->yylex(); // read after 'procedure'
 
@@ -1320,91 +1501,43 @@ void ParameterGroup(void){
 		paramNames.push_back(lexer->YYText());
 		current = (TOKEN)lexer->yylex();
 	}
+=======
+>>>>>>> 6b33284 (TP6 my essay1)
 
-	if (current != COLON)
-	{
-		Error("Expected a colon after the parameter group");
-	}
-	current = (TOKEN)lexer->yylex();
+    current = (TOKEN)lexer->yylex(); // read after 'procedure'
 
-	TYPE type = Type(); // Validate and consume type identifier
-	// Output a comment in assembly for each parameter group
-	cout << "\t# Parameter group parsed with type: " << TypeToString(type) << endl;
-}
+    if (current != ID)
+        Error("Expected identifier after 'procedure'");
 
-// FormalParameterSection ::= <parameter group> | var <parameter group> |
-void FormalParameterSection(void){
-	if (current == VAR)
-	{
-		current=(TOKEN) lexer->yylex();
-		ParameterGroup();
-	} else {
-		ParameterGroup();
-	}
-	
-}
+    string procName = lexer->YYText();
+	Procedures[procName] = true;
 
-// FunctionHeading ::= function <identifier> : <result type> ; | function <identifier> ( <formal parameter section> {;<formal parameter section>} ) : <result type> ;
-void FunctionHeading(void){
-	if (current != FUNCTION)
-	{
-		Error("Expected 'function'");
-	}
+    cout << "\n\t.text\n";                      
+    cout << "\t# Procedure declaration\n";
+    cout << "\t.globl " << procName << "\n";
+    cout << procName << ":\n";
 
-	current=(TOKEN) lexer->yylex();
+    current = (TOKEN)lexer->yylex();
 
-	if (current != ID)
-	{
-		Error("Expected an identifier after 'function'");
-	}
-	// Output function heading comments and label
-	string funcName = lexer->YYText();  // Sauvegarder le nom avant de passer au token suivant
-	cout << "\t.globl " << funcName << "\n";
-	cout << funcName << ":\n";
-	current=(TOKEN) lexer->yylex();	
-	if (current == LPARENT)
-	{
-		current = (TOKEN) lexer->yylex();
-		FormalParameterSection();
-		while (current == SEMICOLON )
-		{
-			current = (TOKEN) lexer->yylex();
-			FormalParameterSection();
-		}
-		if (current != RPARENT)
-		{
-			Error("Expected ')' after parameter list");
-		}
-		current = (TOKEN) lexer->yylex();
-	}
+    if (current != SEMICOLON)
+        Error("Expected ';' after procedure name");
 
-	// now check for the colon
-	if (current != COLON)
-	{
-		Error("Expected ':' after function name or after the list of parameters");
-	}
-	current = (TOKEN) lexer->yylex();
+    current = (TOKEN)lexer->yylex();
 
-	TYPE returnType = Type();  // capture the return type
-	VariablesWithTypes[funcName] = returnType;  // treat function name as variable
+    // Prologue
+    cout << "\tpush %rbp\t# Save base pointer" << endl;
+    cout << "\tmov %rsp, %rbp\t# Set new base pointer" << endl;
 
-	if (current != SEMICOLON)
-	{
-		Error("Expected ';' at the end of function heading");
-	}
-	current = (TOKEN)lexer->yylex();
-	cout << "\t# Function return type parsed\n";
-}
+    CompoundStatement();  // body of the procedure
 
-// FunctionDeclaration ::= <function heading> <block>
-void FunctionDeclaration(void){
-	FunctionHeading();
-	cout << "\tpush %rbp\t# Save base pointer" << endl;
-	cout << "\tmov %rsp, %rbp\t# Set new base pointer" << endl;
-	StatementPart();
-	cout << "\tmov %rbp, %rsp\t# Restore stack before returning" << endl;
-	cout << "\tpop %rbp\t# Restore base pointer" << endl;
-	cout << "\tret\t# Return from function" << endl;
+    if (current != SEMICOLON)
+        Error("Expected SEMICOLON after 'procedure END'");
+
+    current = (TOKEN)lexer->yylex(); // read after 'SEMICOLON'
+
+    // Epilogue
+	cout << "\tleave\t# Restore base pointer and stack" << endl;
+	cout << "\tret\t# Return from procedure" << endl;
 }
 
 // Program := [DeclarationPart] StatementPart
@@ -1412,24 +1545,38 @@ void Program(void){
 	if(current==VAR)
 		VarDeclarationPart();
 
-	while (current == FUNCTION) {
-		FunctionDeclaration(); // 🔧 appelle ta fonction existante
+	while (current == PROCEDURE) {
+		ProcedureDeclaration(); // 🔧 appelle ta fonction existante
 	}
 
 	StatementPart();	
 }
 
 int main(void) {
+<<<<<<< HEAD
 	// Header for gcc assembler / linker
 	cout << "\t\t\t# This code was produced by the CERI Compiler" << endl;
 
 	// Print format strings first
 	cout << "\t.section .rodata\n";
+=======
+	// Generate code for the program
+	cout << "\t\t\t# This code was produced by the CERI Compiler" << endl;
+	current = (TOKEN) lexer->yylex();
+	Program();  // generate code → uses StrConst0, etc.
+
+	cout << "\tleave\t\t# Restore base pointer and stack" << endl;
+	cout << "\tret\t\t# Return from main" << endl;
+
+	// Output string literals after parsing
+	cout << "\n\t.section .rodata\n";
+>>>>>>> 6b33284 (TP6 my essay1)
 	cout << "FormatUInt: .asciz \"%llu\\n\"\n";
 	cout << "FormatString: .asciz \"%s\\n\"\n";
 	cout << "FormatString2: .asciz \"%f\\n\"\n";
 	cout << "FormatString3: .asciz \"%c\\n\"\n";
 
+<<<<<<< HEAD
 	// Begin parsing and code generation
 	current = (TOKEN) lexer->yylex();
 	Program();
@@ -1447,5 +1594,16 @@ int main(void) {
 	if (current != FEOF) {
 		cerr << "Caractères en trop à la fin du programme : [" << current << "]";
 		Error("."); // unexpected characters at the end of program
+=======
+	DumpStringLiterals();  // emit StrConst0, StrConst1, etc.
+
+	// Emit section for read-only data
+	cout << "\t.section .note.GNU-stack,\"\",@progbits\n";
+
+	// End of code generation
+	if (current != FEOF) {
+		cerr << "Caractères en trop à la fin du programme : [" << current << "]";
+		Error(".");
+>>>>>>> 6b33284 (TP6 my essay1)
 	}
 }
