@@ -20,7 +20,7 @@ using namespace std;
 %option yylineno
 %option caseless    
 
-stringconst  \"[^\n"]+\"
+stringconst  \"[^\n\"]*\"
 ws      [ \t\n\r]+
 alpha   [A-Za-z]
 digit   [0-9]
